@@ -1,13 +1,9 @@
-# ファイル持出承認システム (Django統合版)
+このプロジェクトは開発・学習用のサンプルアプリケーションです。
 
-ファイルを外部に持ち出す前に上司の承認を受けるワークフローを実現する現代的なWebアプリケーションです。
-Django統合版では、バックエンドとフロントエンドが一つのDjangoアプリケーションに統合されており、HTMXを活用したモダンなユーザーインターフェースを提供します。
+# ファイル持出承認システム
 
-## 📚 ドキュメント
-
-- **[🚀 クイックスタートガイド](QUICKSTART.md)** - 1分で始める簡単セットアップ
-- **[🔐 LDAP認証テストガイド](LDAP_TEST_GUIDE.md)** - LDAP認証機能の詳細テスト手順
-- **[⚙️ サーバー起動方法](SERVER_STARTUP.md)** - 本番・開発環境でのサーバー起動
+ファイルを外部に持ち出す前に上司の承認を受けるワークフローを想定したWebアプリケーションです。
+バックエンドとフロントエンドが一つのDjangoアプリケーションに統合されており、HTMXを活用したモダンなユーザーインターフェースを提供します。
 
 ## システム概要
 
@@ -17,10 +13,8 @@ Django統合版では、バックエンドとフロントエンドが一つのDj
 - **管理者**: Django管理画面での全申請管理、監査ログ確認、証跡管理
 
 ### 特徴
-- **モダンなUI/UX**: HTMXとBootstrap 5による快適な操作感
 - **リアルタイム通知**: WebSocketによるリアルタイム通知システム
 - **カンバンボード**: 申請状況を視覚的に管理（承認待ち・承認済み・拒否）
-- **レスポンシブデザイン**: デスクトップ・タブレット・スマートフォン対応
 - **リアルタイム更新**: ページリロード不要のAjax通信とWebSocket連携
 - **監査ログ**: 全ての操作を記録し、証跡管理を実現
 
@@ -40,8 +34,6 @@ Django統合版では、バックエンドとフロントエンドが一つのDj
 ### リアルタイム通信・通知システム
 - **Django Channels 4.2.0** - WebSocket・非同期通信フレームワーク
 - **Daphne 4.1.2** - ASGI対応Webサーバー（WebSocket処理）
-- **Redis 5.0.8** - インメモリデータストア（チャンネルレイヤー）
-- **channels-redis 4.2.0** - DjangoChannels用Redisアダプター
 
 ## 主要機能
 
@@ -57,19 +49,15 @@ Django統合版では、バックエンドとフロントエンドが一つのDj
 - **申請詳細確認**: モーダルウィンドウでの詳細情報表示
 - **ファイルプレビュー**: アップロードされたファイルの確認
 - **承認・拒否理由入力**: 詳細なコメント記録
-- **一括操作**: 複数申請の効率的な処理
 
 ### 管理・監査機能
 - **Django管理画面**: 管理者向けの包括的な管理インターフェース
 - **監査ログシステム**: 全操作の自動記録と追跡
 - **証跡管理**: 申請から承認までの完全な履歴
 - **ユーザー管理**: 組織階層に基づくユーザー管理
-- **レポート機能**: 申請統計とダッシュボード表示
 
 ### ユーザーエクスペリエンス
-- **レスポンシブデザイン**: 全デバイス対応のモダンUI
 - **リアルタイム通知**: WebSocketによる即座の通知更新
-- **キーボードショートカット**: 効率的な操作支援
 - **リアルタイム更新**: ページリロード不要のスムーズな操作
 - **プログレッシブ・エンハンスメント**: JavaScript無効環境でも基本機能利用可能
 
@@ -82,8 +70,6 @@ Django統合版では、バックエンドとフロントエンドが一つのDj
 ### Windows環境での前提条件
 - **Visual Studio Build Tools** または **Visual Studio Community** （Pillowライブラリのコンパイル用）
 - **Redis Server** （WebSocket・リアルタイム通知用、開発時はオプション）
-- **Git for Windows** (推奨)
-- **PowerShell 5.1以上** (Windows 10/11標準)
 
 ### 簡単セットアップ・起動（Windows PowerShell）
 
@@ -148,15 +134,10 @@ LDAP_SERVICE_PASSWORD = 'your_service_password'  # サービスアカウント�
 # 本番環境（Active Directory使用）
 AUTHENTICATION_BACKENDS = [
     'users.backends.WindowsLDAPBackend',  # 優先
-   # ...existing code...
     'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
 ]
+```
 
-# 開発環境（モックLDAP使用）
-AUTHENTICATION_BACKENDS = [
-   # ...existing code...
-    'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
-]
 ```
 python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
@@ -262,60 +243,7 @@ CarryOutApproval/
 - **ソート機能**: 作成日、更新日、申請者名による並び替え
 - **バッチ操作**: 複数選択による一括操作
 
-### キーボードショートカット
-- **N**: 新しい申請作成
-- **R**: ページリフレッシュ
-- **Esc**: モーダルを閉じる
-- **F**: フィルター機能を開く
-- **?**: ヘルプ表示
-
 ## テスト・動作確認
-
-### LDAP認証システムのテスト
-
-本システムはWindows環境でのLDAP認証（Active Directory統合）に対応しています。以下のコマンドで認証システムをテストできます。
-
-#### 1. LDAP設定確認
-```bash
-# LDAP設定とライブラリの動作確認
-uv run python manage.py test_ldap
-```
-
-#### 2. モックLDAP認証テスト
-```bash
-# 開発環境用モック認証のテスト
-uv run python manage.py test_ldap --username user1_1 --password pass1_1 --mock
-
-# 他のモックユーザーでのテスト
-uv run python manage.py test_ldap --username user2_3 --password pass2_3 --mock
-uv run python manage.py test_ldap --username user5_1 --password pass5_1 --mock
-```
-
-#### 3. 本番LDAP認証テスト（Active Directory設定済みの場合）
-```bash
-# 実際のActive Directoryユーザーでの認証テスト
-uv run python manage.py test_ldap --username yourusername --password yourpassword
-```
-
-### モックLDAPユーザー一覧
-
-開発・テスト用に以下の階層構造のモックユーザーが利用できます：
-
-```
-ou1 (トップレベル)
-├── user1_1 / pass1_1
-├── user1_2 / pass1_2
-├── ...
-└── ou2 (サブOU)
-    ├── user2_1 / pass2_1
-    ├── user2_2 / pass2_2
-    └── ou3
-        ├── user3_1 / pass3_1
-        └── ou4
-            ├── user4_1 / pass4_1
-            └── ou5
-                └── user5_1 / pass5_1
-```
 
 ### Webアプリケーションテスト
 
@@ -328,12 +256,7 @@ uv run python manage.py runserver 8000
 # http://localhost:8000/users/login/
 ```
 
-#### 2. LDAP認証テスト（Webブラウザ）
-- ログインページ（`http://localhost:8000/users/login/`）で以下のユーザーでテスト：
-  - **モックユーザー**: `user1_1` / `pass1_1`（任意の4文字以上のパスワード）
-  - **Djangoユーザー**: `admin` / `admin`（作成済みの場合）
-
-#### 3. WebSocket・リアルタイム通知テスト
+#### 2. WebSocket・リアルタイム通知テスト
 ```bash
 # ASGIサーバー（WebSocket対応）で起動
 uv run python -m daphne -p 8000 carry_out_approval.asgi:application
@@ -342,7 +265,7 @@ uv run python -m daphne -p 8000 carry_out_approval.asgi:application
 # http://localhost:8000/websocket-test/
 ```
 
-#### 4. 通知システムテスト
+#### 3. 通知システムテスト
 ```bash
 # 通知システムの動作テスト
 uv run python test_notifications.py
@@ -385,10 +308,6 @@ curl -H "Content-Type: application/json" \
    LDAP_DOMAIN = 'yourdomain.com'
    LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'
    ```
-
-3. **モック認証が動作しない**
-   - `mockldap_server/mock_ou_users.json`の存在を確認
-   - ファイルの権限とJSONフォーマットを確認
 
 #### WebSocket接続エラー
 1. **WebSocket接続失敗**
@@ -508,18 +427,6 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 - **認証**: Django組み込み認証システム
 
 ## アーキテクチャの特徴
-
-### 統合型アーキテクチャのメリット
-
-1. **開発効率の最大化**: Django統合により迅速なフルスタック開発
-2. **保守性の向上**: 単一フレームワークによるコード統一性
-3. **モダンなUX**: HTMX + Bootstrap 5 + WebSocketによる快適な操作感
-4. **リアルタイム通信**: WebSocketとDjango Channelsによる即座の通知
-5. **スケーラビリティ**: Django ORMとREST APIによる拡張容易性
-6. **セキュリティ**: Django標準機能によるCSRF保護、認証・認可
-7. **管理効率**: Django Admin による直感的な管理インターフェース
-
-### 技術的な設計判断
 
 #### HTMXの採用理由
 - **軽量性**: 重いJavaScriptフレームワークが不要
