@@ -1,0 +1,101 @@
+{
+    "configurations": [
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Django Development Server (uv)",
+            "program": "${workspaceFolder}/django/manage.py",
+            "args": [
+                "runserver",
+                "8000"
+            ],
+            "django": true,
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Django with uv run",
+            "program": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": [
+                "${workspaceFolder}/django/manage.py",
+                "runserver",
+                "8000"
+            ],
+            "django": true,
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Collect Static Files",
+            "program": "${workspaceFolder}/django/manage.py",
+            "args": [
+                "collectstatic",
+                "--noinput"
+            ],
+            "django": true,
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Django ASGI Server (Daphne)",
+            "module": "daphne",
+            "args": [
+                "-p",
+                "8000",
+                "carry_out_approval.asgi:application"
+            ],
+            "django": true,
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "preLaunchTask": "Django: Collect Static Files"
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Django ASGI Server with WebSocket Debug (Daphne)",
+            "module": "daphne",
+            "args": [
+                "-v",
+                "2",
+                "-p",
+                "8000",
+                "carry_out_approval.asgi:application"
+            ],
+            "django": true,
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "preLaunchTask": "Django: Collect Static Files"
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Test Notifications Script",
+            "program": "${workspaceFolder}/django/test_notifications.py",
+            "cwd": "${workspaceFolder}/django",
+            "envFile": "${workspaceFolder}/django/.env",
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

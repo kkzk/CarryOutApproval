@@ -1,0 +1,17 @@
+{
+  "base_dn": "dc=example,dc=org",
+  "ou_table": [
+    { "id": "company", "ou": "company", "description": "Company Root OU", "parent_id": null },
+    { "id": "departments", "ou": "departments", "description": "Departments OU", "parent_id": "company" },
+    { "id": "engineering", "ou": "engineering", "description": "Engineering Department", "parent_id": "departments" },
+    { "id": "development", "ou": "development", "description": "Development Team", "parent_id": "engineering" },
+    { "id": "backend", "ou": "backend", "description": "Backend Development Team", "parent_id": "development" }
+  ],
+  "user_table": [
+    { "uid": "user001", "userPassword": "pass", "displayName": "山田 太郎", "ou_id": "backend" },
+    { "uid": "user002", "userPassword": "pass", "displayName": "佐藤 花子", "ou_id": "backend" },
+    { "uid": "user003", "userPassword": "pass", "displayName": "田中 一郎", "ou_id": "backend" },
+    { "uid": "user004", "userPassword": "pass", "displayName": "鈴木 雪", "ou_id": "backend" },
+    { "uid": "user005", "userPassword": "pass", "displayName": "渡辺 健二", "ou_id": "backend" }
+  ]
+}

@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- ヘッダー -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>
+                    <i class="fas fa-list me-2"></i>{{ title }}
+                    <small class="text-muted fs-6">（管理者として）</small>
+                </h2>
+                <div>
+                    <a href="{% url 'applications:kanban-board' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-columns me-2"></i>カンバンボード
+                    </a>
+                    <a href="/admin/applications/application/" class="btn btn-outline-secondary">
+                        <i class="fas fa-cog me-2"></i>Django管理画面
+                    </a>
+                </div>
+            </div>
+
+            <!-- 統計情報 -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-warning text-dark">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-clock fa-2x"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="text-xs fw-bold text-uppercase mb-1">承認待ち</div>
+                                    <div class="h5 mb-0">{{ stats.pending }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-check fa-2x"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="text-xs fw-bold text-uppercase mb-1">承認済み</div>
+                                    <div class="h5 mb-0">{{ stats.approved }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-danger text-white">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-times fa-2x"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="text-xs fw-bold text-uppercase mb-1">拒否</div>
+                                    <div class="h5 mb-0">{{ stats.rejected }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-list fa-2x"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <div class="text-xs fw-bold text-uppercase mb-1">総申請数</div>
+                                    <div class="h5 mb-0">{{ stats.total }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- フィルタフォーム -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-4">
+                            <label for="{{ filter_form.status.id_for_label }}" class="form-label">
+                                {{ filter_form.status.label }}
+                            </label>
+                            {{ filter_form.status }}
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ filter_form.applicant.id_for_label }}" class="form-label">
+                                {{ filter_form.applicant.label }}
+                            </label>
+                            {{ filter_form.applicant }}
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ filter_form.approver.id_for_label }}" class="form-label">
+                                {{ filter_form.approver.label }}
+                            </label>
+                            {{ filter_form.approver }}
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-outline-primary">
+                                <i class="fas fa-search me-2"></i>絞り込み
+                            </button>
+                            <a href="{% url 'applications:admin-application-list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-2"></i>クリア
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 申請一覧テーブル -->
+            <div class="card">
+                <div class="card-body">
+                    {% if applications %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>申請者</th>
+                                        <th>承認者</th>
+                                        <th>ファイル名</th>
+                                        <th>ステータス</th>
+                                        <th>申請日</th>
+                                        <th>承認日</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for application in applications %}
+                                        <tr>
+                                            <td>
+                                                <strong>#{{ application.id }}</strong>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-user me-2 text-muted"></i>
+                                                    {{ application.applicant.get_full_name|default:application.applicant.username }}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-user-check me-2 text-muted"></i>
+                                                    {{ application.approver.get_full_name|default:application.approver.username }}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="fas fa-file me-2 text-muted"></i>
+                                                    <span class="text-truncate" style="max-width: 200px;" title="{{ application.original_filename }}">
+                                                        {{ application.original_filename }}
+                                                    </span>
+                                                </div>
+                                                <small class="text-muted">
+                                                    {{ application.file_size|filesizeformat }}
+                                                </small>
+                                            </td>
+                                            <td>
+                                                {% if application.status == 'pending' %}
+                                                    <span class="badge bg-warning text-dark">
+                                                        <i class="fas fa-clock me-1"></i>{{ application.get_status_display }}
+                                                    </span>
+                                                {% elif application.status == 'approved' %}
+                                                    <span class="badge bg-success">
+                                                        <i class="fas fa-check me-1"></i>{{ application.get_status_display }}
+                                                    </span>
+                                                {% elif application.status == 'rejected' %}
+                                                    <span class="badge bg-danger">
+                                                        <i class="fas fa-times me-1"></i>{{ application.get_status_display }}
+                                                    </span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <small>{{ application.created_at|date:"Y/m/d H:i" }}</small>
+                                            </td>
+                                            <td>
+                                                {% if application.approved_at %}
+                                                    <small>{{ application.approved_at|date:"Y/m/d H:i" }}</small>
+                                                {% else %}
+                                                    <span class="text-muted">-</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button type="button" 
+                                                            class="btn btn-outline-info btn-sm"
+                                                            data-bs-toggle="modal" 
+                                                            data-bs-target="#detailModal"
+                                                            onclick="loadApplicationDetail({{ application.id }})">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                    {% if application.file %}
+                                                        <a href="{{ application.file.url }}" 
+                                                           class="btn btn-outline-secondary btn-sm" 
+                                                           target="_blank"
+                                                           title="ファイルを開く">
+                                                            <i class="fas fa-download"></i>
+                                                        </a>
+                                                    {% endif %}
+                                                    <a href="/admin/applications/application/{{ application.id }}/change/" 
+                                                       class="btn btn-outline-primary btn-sm"
+                                                       title="Django管理画面で編集">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- ページネーション -->
+                        {% if applications.has_other_pages %}
+                            <nav aria-label="申請一覧ページネーション" class="mt-4">
+                                <ul class="pagination justify-content-center">
+                                    {% if applications.has_previous %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                <i class="fas fa-angle-double-left"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ applications.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                <i class="fas fa-angle-left"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+
+                                    {% for num in applications.paginator.page_range %}
+                                        {% if applications.number == num %}
+                                            <li class="page-item active">
+                                                <span class="page-link">{{ num }}</span>
+                                            </li>
+                                        {% elif num > applications.number|add:'-3' and num < applications.number|add:'3' %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="?page={{ num }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">{{ num }}</a>
+                                            </li>
+                                        {% endif %}
+                                    {% endfor %}
+
+                                    {% if applications.has_next %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ applications.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                <i class="fas fa-angle-right"></i>
+                                            </a>
+                                        </li>
+                                        <li class="page-item">
+                                            <a class="page-link" href="?page={{ applications.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                <i class="fas fa-angle-double-right"></i>
+                                            </a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">申請がありません</h5>
+                            <p class="text-muted">条件に一致する申請データがありません。</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 申請詳細モーダル -->
+<div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" id="modalContent">
+            <!-- HTMX で動的にロードされる内容 -->
+            <div class="text-center p-4">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">読み込み中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadApplicationDetail(applicationId) {
+    // 申請詳細をロード
+    const modalContent = document.getElementById('modalContent');
+    
+    // CSRFトークンを取得
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                     document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    // 正しいURLを構築
+    const url = `{% url 'applications:application-detail-modal' pk=0 %}`.replace('0', applicationId);
+    
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.text();
+    })
+    .then(html => {
+        modalContent.innerHTML = html;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        modalContent.innerHTML = `
+            <div class="alert alert-danger m-3">
+                <h6>申請詳細の読み込みに失敗しました</h6>
+                <p>エラー: ${error.message}</p>
+            </div>
+        `;
+    });
+}
+</script>
+{% endblock %}

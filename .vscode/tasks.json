@@ -1,0 +1,349 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Django: runserver (uv)",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "runserver",
+                "8000"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true,
+            "runOptions": {
+                "runOn": "default"
+            }
+        },
+        {
+            "label": "Django: Collect Static Files",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "collectstatic",
+                "--noinput"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Django: Start ASGI Server (Daphne)",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "-m",
+                "daphne",
+                "-p",
+                "8000",
+                "carry_out_approval.asgi:application"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true,
+            "runOptions": {
+                "runOn": "default"
+            },
+            "dependsOn": "Django: Collect Static Files"
+        },
+        {
+            "label": "Django: Start ASGI Server with WebSocket Debug (Daphne)",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "-m",
+                "daphne",
+                "-v",
+                "2",
+                "-p",
+                "8000",
+                "carry_out_approval.asgi:application"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true,
+            "runOptions": {
+                "runOn": "default"
+            },
+            "dependsOn": "Django: Collect Static Files"
+        },
+        {
+            "label": "Django: Make Migrations",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "makemigrations"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Django: Migrate",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "migrate"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Django: Create Superuser",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "createsuperuser"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Django: Shell",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "manage.py",
+                "shell"
+            ],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test Notifications",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "test_notifications.py"
+            ],
+            "group": "test",
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "OpenLDAP: Start Server",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-File",
+                "start-ldap.ps1",
+                "start"
+            ],
+            "group": "test",
+            "options": {
+                "cwd": "${workspaceFolder}/mockldap_server"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true
+        },
+        {
+            "label": "OpenLDAP: Stop Server",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-File",
+                "start-ldap.ps1",
+                "stop"
+            ],
+            "group": "test",
+            "options": {
+                "cwd": "${workspaceFolder}/mockldap_server"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "OpenLDAP: Show Status",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-File",
+                "start-ldap.ps1",
+                "status"
+            ],
+            "group": "test",
+            "options": {
+                "cwd": "${workspaceFolder}/mockldap_server"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test LDAP Connection",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "test_ldap_connection.py"
+            ],
+            "group": "test",
+            "options": {
+                "cwd": "${workspaceFolder}/mockldap_server"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Django: Start Development Server with WebSocket (Daphne)",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "python",
+                "-m",
+                "daphne",
+                "-v",
+                "1",
+                "-p",
+                "8000",
+                "carry_out_approval.asgi:application"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true,
+            "runOptions": {
+                "runOn": "default"
+            },
+            "dependsOn": "Django: Collect Static Files"
+        }
+    ]
+}

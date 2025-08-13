@@ -1,0 +1,726 @@
+# ファイル持出承認システム (Django統合版)
+
+ファイルを外部に持ち出す前に上司の承認を受けるワークフローを実現する現代的なWebアプリケーションです。
+Django統合版では、バックエンドとフロントエンドが一つのDjangoアプリケーションに統合されており、HTMXを活用したモダンなユーザーインターフェースを提供します。
+
+## 📚 ドキュメント
+
+- **[🚀 クイックスタートガイド](QUICKSTART.md)** - 1分で始める簡単セットアップ
+- **[🔐 LDAP認証テストガイド](LDAP_TEST_GUIDE.md)** - LDAP認証機能の詳細テスト手順
+- **[⚙️ サーバー起動方法](SERVER_STARTUP.md)** - 本番・開発環境でのサーバー起動
+
+## システム概要
+
+### 主な機能
+- **申請者**: ドラッグ&ドロップでファイルをアップロードし、承認者を指定して持出申請を作成
+- **承認者**: カンバンボードでドラッグ&ドロップによる直感的な承認・拒否操作
+- **管理者**: Django管理画面での全申請管理、監査ログ確認、証跡管理
+
+### 特徴
+- **モダンなUI/UX**: HTMXとBootstrap 5による快適な操作感
+- **リアルタイム通知**: WebSocketによるリアルタイム通知システム
+- **カンバンボード**: 申請状況を視覚的に管理（承認待ち・承認済み・拒否）
+- **レスポンシブデザイン**: デスクトップ・タブレット・スマートフォン対応
+- **リアルタイム更新**: ページリロード不要のAjax通信とWebSocket連携
+- **監査ログ**: 全ての操作を記録し、証跡管理を実現
+
+## 技術スタック
+
+### バックエンド & フロントエンド (統合型アーキテクチャ)
+- **Django 5.2.5** - Pythonベースの高機能Webフレームワーク
+- **Django REST Framework 3.16.1** - RESTful API開発フレームワーク
+- **Django Templates** - サーバーサイドレンダリングエンジン
+- **HTMX 1.8.4** - モダンなAjax通信ライブラリ（SPAライクな操作感を実現）
+- **Bootstrap 5.1.3** - レスポンシブUIフレームワーク
+- **Sortable.js** - ドラッグ&ドロップ機能ライブラリ
+- **SQLite** (開発用) / **PostgreSQL** (本番推奨)
+- **Pillow 11.3.0** - 画像・ファイル処理ライブラリ
+- **python-decouple 3.8** - 設定管理ライブラリ
+
+### リアルタイム通信・通知システム
+- **Django Channels 4.2.0** - WebSocket・非同期通信フレームワーク
+- **Daphne 4.1.2** - ASGI対応Webサーバー（WebSocket処理）
+- **Redis 5.0.8** - インメモリデータストア（チャンネルレイヤー）
+- **channels-redis 4.2.0** - DjangoChannels用Redisアダプター
+
+## 主要機能
+
+### 申請機能
+- **直感的なファイルアップロード**: ドラッグ&ドロップ対応のモダンなファイル選択
+- **承認者検索・選択**: リアルタイム検索による承認者選択
+- **持出理由入力**: 詳細な理由とコメントの記録
+- **申請履歴管理**: 自分の申請一覧表示と進捗確認
+- **カンバンボード**: 視覚的な申請状況管理
+
+### 承認機能
+- **ドラッグ&ドロップ承認**: カンバンボードでの直感的な状況変更
+- **申請詳細確認**: モーダルウィンドウでの詳細情報表示
+- **ファイルプレビュー**: アップロードされたファイルの確認
+- **承認・拒否理由入力**: 詳細なコメント記録
+- **一括操作**: 複数申請の効率的な処理
+
+### 管理・監査機能
+- **Django管理画面**: 管理者向けの包括的な管理インターフェース
+- **監査ログシステム**: 全操作の自動記録と追跡
+- **証跡管理**: 申請から承認までの完全な履歴
+- **ユーザー管理**: 組織階層に基づくユーザー管理
+- **レポート機能**: 申請統計とダッシュボード表示
+
+### ユーザーエクスペリエンス
+- **レスポンシブデザイン**: 全デバイス対応のモダンUI
+- **リアルタイム通知**: WebSocketによる即座の通知更新
+- **キーボードショートカット**: 効率的な操作支援
+- **リアルタイム更新**: ページリロード不要のスムーズな操作
+- **プログレッシブ・エンハンスメント**: JavaScript無効環境でも基本機能利用可能
+
+## セットアップ方法
+
+### 必要な環境
+- **Python 3.8-3.13** (3.13推奨)
+- **[uv](https://docs.astral.sh/uv/)** (高速パッケージマネージャー、推奨) または pip
+
+### Windows環境での前提条件
+- **Visual Studio Build Tools** または **Visual Studio Community** （Pillowライブラリのコンパイル用）
+- **Redis Server** （WebSocket・リアルタイム通知用、開発時はオプション）
+- **Git for Windows** (推奨)
+- **PowerShell 5.1以上** (Windows 10/11標準)
+
+### 簡単セットアップ・起動（Windows PowerShell）
+
+```powershell
+# 初回セットアップ
+.\setup-django.ps1
+
+# 開発サーバー起動（通常のDjangoサーバー）
+.\start-django.ps1
+
+# WebSocket対応ASGIサーバー起動（Daphne）
+.\start-daphne.ps1
+```
+
+### 手動セットアップ
+
+```powershell
+# uvプロジェクト管理を使用（推奨）
+uv sync
+
+# Djangoディレクトリに移動
+cd django
+
+# データベースマイグレーション
+uv run python manage.py migrate
+
+# スーパーユーザー作成
+uv run python manage.py createsuperuser
+
+# 静的ファイル収集
+uv run python manage.py collectstatic --noinput
+
+# サーバー起動
+uv run python manage.py runserver 8000
+
+# WebSocket対応ASGIサーバー起動（推奨）
+uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+```
+
+### LDAP認証環境のセットアップ
+
+#### 1. LDAP対応ライブラリのインストール
+```powershell
+# LDAPライブラリを含む依存関係をインストール
+uv sync --extra ldap
+```
+
+#### 2. Active Directory設定（本番環境）
+`django/carry_out_approval/settings.py`を編集：
+
+```python
+# Windows対応LDAP Configuration
+LDAP_SERVER = 'ldap://your-domain-controller.yourdomain.com:389'
+LDAP_DOMAIN = 'yourdomain.com'  # Active Directoryドメイン名
+LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'  # 検索ベースDN
+LDAP_SERVICE_USER = 'serviceaccount@yourdomain.com'  # サービスアカウント
+LDAP_SERVICE_PASSWORD = 'your_service_password'  # サービスアカウントパスワード
+```
+
+#### 3. LDAP認証バックエンドの選択
+```python
+# 本番環境（Active Directory使用）
+AUTHENTICATION_BACKENDS = [
+    'users.backends.WindowsLDAPBackend',  # 優先
+   # ...existing code...
+    'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
+]
+
+# 開発環境（モックLDAP使用）
+AUTHENTICATION_BACKENDS = [
+   # ...existing code...
+    'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
+]
+```
+python -m daphne -p 8000 carry_out_approval.asgi:application
+```
+
+## アクセス方法
+
+- **カンバンボード**: http://localhost:8000
+- **Django管理画面**: http://localhost:8000/admin
+- **WebSocket接続テスト**: http://localhost:8000/websocket-test
+- **REST API**: http://localhost:8000/api
+- **API ドキュメント**: http://localhost:8000/api/ (DRFブラウザ表示)
+
+**注意**: リアルタイム通知機能を使用するには、Daphne（ASGIサーバー）での起動が必要です。
+
+## テストユーザー
+
+開発用に以下のテストユーザーが利用できます：
+
+| ユーザーID | パスワード | 名前 | 所属コード | 役割 |
+|-----------|-----------|------|-----------|------|
+| admin | admin123 | 管理者 | ADMIN | スーパーユーザー |
+| user001 | password123 | 田中太郎 | DEPT001 | 一般ユーザー |
+| user002 | password123 | 佐藤花子 | DEPT002 | 一般ユーザー |
+| user003 | password123 | 鈴木一郎 | DEPT001 | 一般ユーザー |
+
+## ファイル構成
+
+```
+CarryOutApproval/
+├── .venv/                   # Python仮想環境
+├── django/                  # Django統合アプリケーション
+│   ├── carry_out_approval/  # Django プロジェクト設定
+│   │   ├── settings.py      # Django設定
+│   │   ├── urls.py          # URLルーティング
+│   │   ├── wsgi.py          # WSGI設定
+│   │   └── asgi.py          # ASGI設定（WebSocket対応）
+│   ├── applications/        # 申請管理アプリ
+│   │   ├── models.py        # 申請・承認モデル
+│   │   ├── views.py         # ビュー（Web + API）
+│   │   ├── serializers.py   # API シリアライザー
+│   │   ├── admin.py         # 管理画面設定
+│   │   ├── urls.py          # URLルーティング
+│   │   ├── templates/       # HTMLテンプレート
+│   │   │   └── applications/
+│   │   │       ├── kanban_board.html
+│   │   │       ├── application_card.html
+│   │   │       └── application_detail_modal.html
+│   │   └── static/          # 静的ファイル
+│   │       └── applications/
+│   │           ├── css/
+│   │           └── js/
+│   ├── users/               # ユーザー管理アプリ
+│   │   ├── models.py        # ユーザーモデル
+│   │   ├── views.py         # ユーザーAPI
+│   │   ├── serializers.py   # ユーザーシリアライザー
+│   │   ├── admin.py         # ユーザー管理画面
+│   │   ├── middleware.py    # カスタムセッション管理
+│   │   └── management/      # 管理コマンド
+│   │       └── commands/
+│   │           └── create_test_users.py
+│   ├── audit/               # 監査ログアプリ
+│   │   ├── models.py        # 監査ログモデル
+│   │   ├── views.py         # 監査ログAPI
+│   │   └── admin.py         # 監査ログ管理画面
+│   ├── notifications/       # リアルタイム通知アプリ
+│   │   ├── models.py        # 通知モデル
+│   │   ├── views.py         # 通知API
+│   │   ├── consumers.py     # WebSocketコンシューマー
+│   │   ├── routing.py       # WebSocketルーティング
+│   │   ├── services.py      # 通知サービス
+│   │   └── serializers.py   # 通知シリアライザー
+│   ├── templates/           # 共通テンプレート
+│   │   ├── base.html        # ベーステンプレート
+│   │   └── websocket_test.html # WebSocket接続テスト
+│   ├── storage/             # ファイルストレージ
+│   │   ├── uploads/         # アップロードファイル
+│   │   └── approved/        # 承認済みファイル
+│   ├── requirements.txt     # Python依存関係
+│   ├── manage.py            # Django管理スクリプト
+│   ├── test_notifications.py # 通知システムテスト
+│   └── db.sqlite3           # SQLiteデータベース
+├── setup-django.ps1         # セットアップスクリプト
+├── start-django.ps1         # Django起動スクリプト
+├── start-daphne.ps1         # Daphne起動スクリプト（WebSocket対応）
+└── README.md                # このファイル
+```
+
+## カンバンボードの使い方
+
+### 基本操作
+1. **ログイン**: http://localhost:8000 でテストユーザーでログイン
+2. **申請状況確認**: 3つのカラムで申請状況を視覚的に管理
+   - **承認待ち (Pending)**: 新規申請や承認待ちの申請
+   - **承認済み (Approved)**: 承認された申請
+   - **拒否 (Rejected)**: 却下された申請
+3. **ドラッグ&ドロップ操作**: 申請カードをドラッグして異なるカラムに移動
+4. **申請詳細確認**: カードクリックで詳細情報をモーダル表示
+5. **新規申請作成**: 「新しい申請」ボタンまたはキーボードショートカット
+
+### 高度な機能
+- **フィルタリング**: 申請者、承認者、期間による絞り込み
+- **検索機能**: キーワードによる申請検索
+- **ソート機能**: 作成日、更新日、申請者名による並び替え
+- **バッチ操作**: 複数選択による一括操作
+
+### キーボードショートカット
+- **N**: 新しい申請作成
+- **R**: ページリフレッシュ
+- **Esc**: モーダルを閉じる
+- **F**: フィルター機能を開く
+- **?**: ヘルプ表示
+
+## テスト・動作確認
+
+### LDAP認証システムのテスト
+
+本システムはWindows環境でのLDAP認証（Active Directory統合）に対応しています。以下のコマンドで認証システムをテストできます。
+
+#### 1. LDAP設定確認
+```bash
+# LDAP設定とライブラリの動作確認
+uv run python manage.py test_ldap
+```
+
+#### 2. モックLDAP認証テスト
+```bash
+# 開発環境用モック認証のテスト
+uv run python manage.py test_ldap --username user1_1 --password pass1_1 --mock
+
+# 他のモックユーザーでのテスト
+uv run python manage.py test_ldap --username user2_3 --password pass2_3 --mock
+uv run python manage.py test_ldap --username user5_1 --password pass5_1 --mock
+```
+
+#### 3. 本番LDAP認証テスト（Active Directory設定済みの場合）
+```bash
+# 実際のActive Directoryユーザーでの認証テスト
+uv run python manage.py test_ldap --username yourusername --password yourpassword
+```
+
+### モックLDAPユーザー一覧
+
+開発・テスト用に以下の階層構造のモックユーザーが利用できます：
+
+```
+ou1 (トップレベル)
+├── user1_1 / pass1_1
+├── user1_2 / pass1_2
+├── ...
+└── ou2 (サブOU)
+    ├── user2_1 / pass2_1
+    ├── user2_2 / pass2_2
+    └── ou3
+        ├── user3_1 / pass3_1
+        └── ou4
+            ├── user4_1 / pass4_1
+            └── ou5
+                └── user5_1 / pass5_1
+```
+
+### Webアプリケーションテスト
+
+#### 1. 基本的な動作確認
+```bash
+# Djangoサーバー起動
+uv run python manage.py runserver 8000
+
+# ブラウザで以下にアクセス
+# http://localhost:8000/users/login/
+```
+
+#### 2. LDAP認証テスト（Webブラウザ）
+- ログインページ（`http://localhost:8000/users/login/`）で以下のユーザーでテスト：
+  - **モックユーザー**: `user1_1` / `pass1_1`（任意の4文字以上のパスワード）
+  - **Djangoユーザー**: `admin` / `admin`（作成済みの場合）
+
+#### 3. WebSocket・リアルタイム通知テスト
+```bash
+# ASGIサーバー（WebSocket対応）で起動
+uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+
+# WebSocket接続テスト
+# http://localhost:8000/websocket-test/
+```
+
+#### 4. 通知システムテスト
+```bash
+# 通知システムの動作テスト
+uv run python test_notifications.py
+```
+
+### API エンドポイントテスト
+
+#### 1. Django REST Framework ブラウザ
+```bash
+# サーバー起動後、ブラウザで以下にアクセス
+# http://localhost:8000/api/
+```
+
+#### 2. カール（curl）コマンドでのテスト
+```bash
+# ユーザー情報取得（要認証）
+curl -H "Content-Type: application/json" \
+     -H "Authorization: Session <session_id>" \
+     http://localhost:8000/api/users/me/
+
+# 申請一覧取得
+curl -H "Content-Type: application/json" \
+     -H "Authorization: Session <session_id>" \
+     http://localhost:8000/api/applications/
+```
+
+### トラブルシューティング
+
+#### LDAP認証関連
+1. **ldap3ライブラリが見つからない**
+   ```bash
+   # LDAPライブラリをインストール
+   uv sync --extra ldap
+   ```
+
+2. **Active Directory接続エラー**
+   - `settings.py`のLDAP設定を確認
+   ```python
+   LDAP_SERVER = 'ldap://your-domain-controller.yourdomain.com:389'
+   LDAP_DOMAIN = 'yourdomain.com'
+   LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'
+   ```
+
+3. **モック認証が動作しない**
+   - `mockldap_server/mock_ou_users.json`の存在を確認
+   - ファイルの権限とJSONフォーマットを確認
+
+#### WebSocket接続エラー
+1. **WebSocket接続失敗**
+   ```bash
+   # Daphneサーバーで起動（runserverではなく）
+   uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+   ```
+
+2. **Redis接続エラー**
+   - 開発環境では InMemoryChannelLayer を使用（Redis不要）
+   - 本番環境では Redis の起動を確認
+
+#### データベース関連
+1. **マイグレーションエラー**
+   ```bash
+   # マイグレーションをリセット
+   uv run python manage.py migrate --fake applications zero
+   uv run python manage.py migrate
+   ```
+
+2. **テストデータの作成**
+   ```bash
+   # スーパーユーザー作成
+   uv run python manage.py createsuperuser
+
+   # テストユーザー作成（カスタムコマンド）
+   uv run python manage.py create_test_users
+   ```
+
+### パフォーマンステスト
+
+#### 1. 大量データテスト
+```python
+# Django Shell でテストデータ生成
+python manage.py shell
+>>> from django.contrib.auth.models import User
+>>> from applications.models import Application
+>>> # 大量申請データの作成スクリプト実行
+```
+
+#### 2. 同時接続テスト
+```bash
+# Apache Bench でのロードテスト例
+ab -n 100 -c 10 http://localhost:8000/
+```
+
+## API エンドポイント
+
+### 認証・ユーザー管理
+- `GET /api/users/me/` - 現在のログインユーザー情報取得
+- `GET /api/users/search/` - ユーザー検索（承認者選択用）
+
+### 申請管理 (Applications)
+- `GET /api/applications/` - 申請一覧（権限に応じてフィルタリング）
+- `POST /api/applications/` - 新規申請作成
+- `GET /api/applications/{id}/` - 申請詳細取得
+- `PUT /api/applications/{id}/` - 申請情報更新
+- `PATCH /api/applications/{id}/update_status/` - 申請状態更新（承認・拒否）
+- `DELETE /api/applications/{id}/` - 申請削除
+- `GET /api/applications/my/` - 自分の申請一覧
+- `GET /api/applications/pending/` - 承認待ち申請一覧
+
+### 監査ログ (Audit)
+- `GET /api/audit/` - 監査ログ一覧（管理者権限必要）
+- `GET /api/audit/{id}/` - 監査ログ詳細
+
+### 通知システム (Notifications)
+- `GET /api/notifications/` - 通知一覧（ログインユーザー宛て）
+- `GET /api/notifications/{id}/` - 通知詳細
+- `PATCH /api/notifications/{id}/mark_read/` - 通知を既読に設定
+- `POST /api/notifications/mark-all-read/` - 全通知を既読に設定
+
+### WebSocket エンドポイント
+- `ws://localhost:8000/ws/notifications/{user_id}/` - リアルタイム通知受信
+
+### ファイル管理
+- `POST /api/applications/upload/` - ファイルアップロード
+- `GET /api/applications/{id}/download/` - 承認済みファイルダウンロード
+
+### API仕様
+- **認証方式**: Django Session Authentication
+- **データ形式**: JSON
+- **エラーレスポンス**: HTTP標準ステータスコード + 詳細メッセージ
+- **ページネーション**: Django REST Framework標準形式
+
+## 設定
+
+### 環境変数（django/.env）
+
+```env
+# Django settings
+SECRET_KEY=django-insecure-p-&2w+m!4-8zzo($a755#8uz0mv@u5+$$zx*gqof+8m4j-#+*=
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Database
+DATABASE_URL=sqlite:///db.sqlite3
+
+# WebSocket & Redis Settings（本番環境用）
+REDIS_URL=redis://localhost:6379/0
+CHANNEL_LAYERS_BACKEND=channels_redis.core.RedisChannelLayer
+
+# Mock User API URL (for development)
+MOCK_USER_API_URL=http://localhost:8001/api/users
+```
+
+**注意**: 開発環境では、Redisがなくてもインメモリチャンネルレイヤーで動作します。
+
+### Django設定のカスタマイズ
+
+Django設定は `django/carry_out_approval/settings.py` で管理されています：
+
+- **データベース**: SQLite（開発用）、PostgreSQL（本番用）
+- **ファイルストレージ**: ローカルストレージ（`storage/`ディレクトリ）
+- **静的ファイル**: `staticfiles/`ディレクトリに収集
+- **テンプレート**: Django Templates + HTMX
+- **認証**: Django組み込み認証システム
+
+## アーキテクチャの特徴
+
+### 統合型アーキテクチャのメリット
+
+1. **開発効率の最大化**: Django統合により迅速なフルスタック開発
+2. **保守性の向上**: 単一フレームワークによるコード統一性
+3. **モダンなUX**: HTMX + Bootstrap 5 + WebSocketによる快適な操作感
+4. **リアルタイム通信**: WebSocketとDjango Channelsによる即座の通知
+5. **スケーラビリティ**: Django ORMとREST APIによる拡張容易性
+6. **セキュリティ**: Django標準機能によるCSRF保護、認証・認可
+7. **管理効率**: Django Admin による直感的な管理インターフェース
+
+### 技術的な設計判断
+
+#### HTMXの採用理由
+- **軽量性**: 重いJavaScriptフレームワークが不要
+- **学習コストの低さ**: HTMLベースのシンプルな記法
+- **サーバー親和性**: Django Templatesとの自然な統合
+- **プログレッシブエンハンスメント**: JavaScript無効環境でも動作
+
+#### Django Channels + WebSocketの採用理由
+- **リアルタイム性**: 申請状況の即座な通知
+- **双方向通信**: サーバーからクライアントへのプッシュ通知
+- **Django統合**: 既存の認証システムとの自然な連携
+- **スケーラブル**: Redis によるチャンネルレイヤーでの水平拡張対応
+
+#### Bootstrap 5の採用理由
+- **レスポンシブ対応**: モバイルファーストデザイン
+- **豊富なコンポーネント**: 迅速なUI開発
+- **カスタマイゼーション**: 企業ブランディングへの対応
+- **アクセシビリティ**: WCAG準拠のUI要素
+
+#### Django統合アーキテクチャ
+- **単一責任の原則**: アプリケーションごとの機能分離
+- **RESTfulAPI**: フロントエンド・バックエンド分離の準備
+- **テンプレートエンジン**: SEO対策とサーバーサイドレンダリング
+- **ORM活用**: データベース抽象化による可搬性
+
+### パフォーマンス最適化
+
+- **静的ファイル圧縮**: CSS/JSの最小化
+- **データベース最適化**: インデックス活用とクエリ最適化
+- **キャッシュ戦略**: Django キャッシュフレームワーク対応
+- **CDN対応**: 静的ファイルの高速配信準備済み
+
+## トラブルシューティング
+
+### Python依存関係のインストールエラー
+
+#### Pillowのビルドエラー
+```
+Failed to build 'pillow'
+```
+**対処法:**
+1. Visual Studio Build Toolsをインストール
+2. `uv pip install pillow` を単体で試行
+
+#### uvコマンドが見つからない場合
+```powershell
+# uvをインストール
+pip install uv
+
+# または従来のpipを使用
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r django\requirements.txt
+```
+
+### Django関連エラー
+
+#### マイグレーションエラー
+```powershell
+# マイグレーションをリセット
+Remove-Item django\db.sqlite3
+cd django
+python manage.py migrate
+python manage.py create_test_users
+```
+
+#### 管理画面にアクセスできない
+```powershell
+# スーパーユーザーを作成
+cd django
+python manage.py createsuperuser
+
+# またはテストユーザーを使用
+# ユーザー名: admin
+# パスワード: admin123
+```
+
+#### 静的ファイルが読み込まれない
+```powershell
+cd django
+python manage.py collectstatic --noinput
+```
+
+### 起動時のエラー
+
+#### ポート8000が既に使用されている
+```powershell
+# プロセスを確認・終了
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```
+
+#### 仮想環境の問題
+```powershell
+# 仮想環境を再作成
+Remove-Item -Recurse -Force .venv
+uv venv
+.\.venv\Scripts\Activate.ps1
+uv pip install -r django\requirements.txt
+```
+
+### WebSocket・リアルタイム通知のエラー
+
+#### WebSocket接続エラー
+```
+WebSocket connection failed
+```
+**対処法:**
+1. Daphne（ASGIサーバー）で起動していることを確認
+2. `.\start-daphne.ps1` または手動で `python -m daphne -p 8000 carry_out_approval.asgi:application`
+
+#### Redis接続エラー（本番環境）
+```
+Connection refused to Redis server
+```
+**対処法:**
+1. Redisサーバーが起動していることを確認
+2. 開発環境ではインメモリチャンネルレイヤーを使用（Redis不要）
+
+#### 通知が届かない
+1. ログイン状態を確認
+2. WebSocket接続テストページで動作確認: http://localhost:8000/websocket-test
+3. ブラウザの開発者ツールでWebSocket接続エラーを確認
+
+## 今後の開発方針
+
+### 近期実装予定
+- **通知システム強化**: ✅ **完了** - WebSocketベースのリアルタイム通知
+- **ファイルプレビュー強化**: PDF、画像の直接プレビュー機能
+- **承認フロー拡張**: 複数段階承認、条件分岐承認
+- **メール通知**: 重要な申請状況変更時のメール通知
+- **モバイルアプリ**: PWA対応による快適なモバイル体験
+
+### 中長期ロードマップ
+- **高度なレポート機能**: グラフィカルな統計レポート
+- **ワークフロー自動化**: 条件に基づく自動承認・振り分け
+- **外部システム連携**: Active Directory、LDAP統合
+- **AI活用**: 自然言語処理による申請内容分析
+
+### セキュリティ・コンプライアンス強化
+- **2要素認証**: TOTP、SMS認証の実装
+- **ファイル暗号化**: アップロード・保存時の自動暗号化
+- **監査強化**: SOX法、個人情報保護法対応
+- **アクセス制御**: ロールベースアクセス制御(RBAC)の拡張
+
+### 本番環境への展開準備
+
+#### インフラストラクチャ
+1. **データベース**: PostgreSQL または MySQL への移行
+2. **Webサーバー**: Nginx + Gunicorn 構成
+3. **ストレージ**: AWS S3、Azure Blob Storage 対応
+4. **モニタリング**: Prometheus + Grafana による監視
+5. **ログ管理**: ELK Stack (Elasticsearch + Logstash + Kibana)
+
+#### セキュリティ設定
+1. **HTTPS強制**: SSL/TLS証明書の設定
+2. **セキュリティヘッダー**: CSP、HSTS等の実装
+3. **環境変数管理**: 機密情報の適切な分離
+4. **定期バックアップ**: データベース・ファイルの自動バックアップ
+5. **侵入検知**: 異常アクセスの監視・通知
+
+#### 運用・保守
+1. **CI/CDパイプライン**: 自動テスト・デプロイ環境
+2. **エラー監視**: Sentry等によるリアルタイム監視
+3. **パフォーマンス監視**: APMツールによる性能監視
+4. **ドキュメント整備**: 運用マニュアル、API仕様書
+
+## ライセンス
+
+このプロジェクトは開発・学習用のサンプルアプリケーションです。
+
+---
+
+## 開発チーム・コントリビューション
+
+### 貢献方法
+1. **Issue報告**: バグや機能要求をGitHub Issuesで報告
+2. **プルリクエスト**: コードの改善提案
+3. **ドキュメント改善**: README、APIドキュメントの更新
+4. **テスト追加**: ユニットテスト、統合テストの拡充
+
+### 開発環境のセットアップ
+```powershell
+# リポジトリのクローン
+git clone <repository-url>
+cd CarryOutApproval
+
+# 開発環境セットアップ
+.\setup-django.ps1
+
+# 開発サーバー起動
+.\start-django.ps1
+```
+
+### コードスタイル
+- **Python**: PEP 8準拠、Black フォーマッター使用
+- **JavaScript**: ESLint + Prettier 設定
+- **HTML/CSS**: Prettier 準拠
+- **コミットメッセージ**: Conventional Commits 形式
+
+### 技術サポート
+- **ドキュメント**: `/docs/` ディレクトリの詳細仕様
+- **API仕様**: OpenAPI/Swagger 対応予定
+- **開発ガイド**: 新機能開発のベストプラクティス

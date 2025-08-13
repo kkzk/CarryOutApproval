@@ -1,0 +1,115 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Database
+*.db
+*.sqlite3
+
+# Django
+django/staticfiles/
+django/media/
+django/storage/uploads/*
+!django/storage/uploads/.gitkeep
+django/storage/approved/*
+!django/storage/approved/.gitkeep
+django/carry_out_approval.db
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Storage
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+backend/storage/approved/*
+!backend/storage/approved/.gitkeep
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/approved/*
+!storage/approved/.gitkeep
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React
+build/
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Python Migration Files (keep only initial migrations)
+django/*/migrations/0*.py
+!django/*/migrations/0001_initial.py
+!django/*/migrations/__init__.py
+
+# uv lock file (generated)
+uv.lock
+
+# Django compiled messages
+*.mo
+
+# Django collected static files
+django/staticfiles/
+
+# Cache files
+.cache/
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml

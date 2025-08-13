@@ -1,0 +1,65 @@
+{% load humanize %}
+<div class="application-card" 
+     data-id="{{ application.id }}" 
+     data-status="{{ application.status }}"
+     style="cursor: grab;"
+     onclick="showApplicationDetail({{ application.id }})">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <small class="text-muted">#{{ application.id }}</small>
+        <span class="badge 
+            {% if application.status == 'pending' %}bg-warning text-dark
+            {% elif application.status == 'approved' %}bg-success
+            {% elif application.status == 'rejected' %}bg-danger
+            {% else %}bg-secondary{% endif %}">
+            {{ application.get_status_display }}
+        </span>
+    </div>
+    <div class="card-body">
+        <h6 class="card-title text-truncate" title="{{ application.original_filename }}">
+            <i class="bi bi-file-earmark"></i> 
+            {{ application.original_filename|truncatechars:30 }}
+        </h6>
+        <div class="card-text">
+            <small class="text-muted">
+                <div class="mb-1">
+                    <i class="bi bi-person"></i> 
+                    {{ application.applicant.get_full_name|default:application.applicant.username }}
+                </div>
+                <div class="mb-1">
+                    <i class="bi bi-person-check"></i> 
+                    {{ application.approver.get_full_name|default:application.approver.username }}
+                </div>
+                <div class="mb-1">
+                    <i class="bi bi-calendar"></i> 
+                    {{ application.created_at|naturaltime }}
+                </div>
+                {% if application.file_size %}
+                <div class="mb-1">
+                    <i class="bi bi-file-bar-graph"></i> 
+                    {{ application.file_size|filesizeformat }}
+                </div>
+                {% endif %}
+            </small>
+        </div>
+        {% if application.comment %}
+        <div class="card-text">
+            <small class="text-primary">
+                <i class="bi bi-chat-left-text"></i> 
+                {{ application.comment|truncatechars:50 }}
+            </small>
+        </div>
+        {% endif %}
+        {% if application.approval_comment %}
+        <div class="card-text">
+            <small class="
+                {% if application.status == 'approved' %}text-success
+                {% elif application.status == 'rejected' %}text-danger
+                {% else %}text-info{% endif %}">
+                <i class="bi bi-chat-right-text"></i> 
+                <strong>承認者コメント:</strong><br>
+                {{ application.approval_comment|truncatechars:80 }}
+            </small>
+        </div>
+        {% endif %}
+    </div>
+</div>

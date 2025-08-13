@@ -1,0 +1,392 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}承認申請管理システム{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    {% block extra_css %}{% endblock %}
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.8.4"></script>
+    
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        .main-content {
+            min-height: calc(100vh - 80px);
+        }
+        
+        /* サイドバーのスタイル */
+        .sidebar {
+            position: fixed;
+            top: 56px; /* navbar の高さ分 */
+            left: 0;
+            width: 250px;
+            height: calc(100vh - 56px);
+            background: #343a40;
+            color: white;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            overflow-y: auto;
+        }
+        
+        .sidebar-hidden {
+            transform: translateX(-250px);
+        }
+        
+        .sidebar-toggle {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1001;
+            background: #495057;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .sidebar-toggle:hover {
+            background: #6c757d;
+        }
+        
+        .sidebar-content {
+            padding: 20px 15px;
+        }
+        
+        .sidebar-section {
+            margin-bottom: 30px;
+        }
+        
+        .sidebar-section h5 {
+            color: #adb5bd;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #495057;
+        }
+        
+        .sidebar-nav {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .sidebar-nav li {
+            margin-bottom: 5px;
+        }
+        
+        .sidebar-nav a {
+            display: block;
+            padding: 10px 15px;
+            color: #adb5bd;
+            text-decoration: none;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+        
+        .sidebar-nav a:hover {
+            background: #495057;
+            color: white;
+            text-decoration: none;
+        }
+        
+        .sidebar-nav a.active {
+            background: #007bff;
+            color: white;
+        }
+        
+        .sidebar-nav i {
+            margin-right: 8px;
+            width: 18px;
+        }
+        
+        .content-with-sidebar {
+            margin-left: 250px;
+            transition: margin-left 0.3s ease;
+        }
+        
+        .content-no-sidebar {
+            margin-left: 0;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-250px);
+            }
+            .content-with-sidebar {
+                margin-left: 0;
+            }
+            .sidebar-toggle {
+                display: block;
+            }
+        }
+        
+        /* サイドバーが隠れているときのスタイル */
+        .sidebar-indicator {
+            position: fixed;
+            top: 56px;
+            left: -50px;
+            width: 100px;
+            height: 40px;
+            background: #007bff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0 20px 20px 0;
+            cursor: pointer;
+            transition: left 0.3s ease;
+            z-index: 999;
+            font-size: 0.875rem;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .sidebar-hidden ~ .sidebar-indicator {
+            left: 0;
+            opacity: 1;
+            pointer-events: all;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <!-- サイドバートグルボタン -->
+            <button class="sidebar-toggle me-3" id="sidebarToggle">
+                <i class="bi bi-list"></i>
+            </button>
+            
+            <a class="navbar-brand" href="{% url 'applications:kanban-board' %}">
+                <i class="bi bi-clipboard-check"></i> 承認申請管理
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'applications:kanban-board' %}">
+                            <i class="bi bi-kanban"></i> カンバンボード
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'admin:index' %}">
+                            <i class="bi bi-gear"></i> 管理画面
+                        </a>
+                    </li>
+                </ul>
+                    </li>
+                </ul>
+                
+                <div class="navbar-nav">
+                    {% if user.is_authenticated %}
+                        <span class="navbar-text me-3">
+                            <i class="bi bi-person-circle"></i> 
+                            {{ user.get_full_name|default:user.username }}
+                        </span>
+                        <div class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-person-gear"></i>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{% url 'users:session-management' %}">
+                                    <i class="bi bi-gear me-2"></i>セッション管理
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <form method="post" action="{% url 'users:logout' %}" id="logoutForm">
+                                        {% csrf_token %}
+                                    </form>
+                                    <a class="dropdown-item" href="#" onclick="document.getElementById('logoutForm').submit(); return false;">
+                                        <i class="bi bi-box-arrow-right me-2"></i>ログアウト
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    {% else %}
+                        <a class="nav-link" href="{% url 'users:login' %}">
+                            <i class="bi bi-box-arrow-in-right"></i> ログイン
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- サイドバー -->
+    {% if user.is_authenticated %}
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-content">
+            <!-- 申請者セクション -->
+            <div class="sidebar-section">
+                <h5>申請者として</h5>
+                <ul class="sidebar-nav">
+                    <li>
+                        <a href="{% url 'applications:create-application' %}" 
+                           {% if request.resolver_match.url_name == 'create-application' %}class="active"{% endif %}>
+                            <i class="bi bi-plus-circle"></i>
+                            新規申請作成
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'applications:my-applications-list' %}" 
+                           {% if request.resolver_match.url_name == 'my-applications-list' %}class="active"{% endif %}>
+                            <i class="bi bi-file-earmark-text"></i>
+                            自分の申請一覧
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'applications:my-applications-board' %}" 
+                           {% if request.resolver_match.url_name == 'my-applications-board' %}class="active"{% endif %}>
+                            <i class="bi bi-kanban"></i>
+                            申請状況ボード
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- 承認者セクション -->
+            <div class="sidebar-section">
+                <h5>承認者として</h5>
+                <ul class="sidebar-nav">
+                    <li>
+                        <a href="{% url 'applications:pending-approvals' %}" 
+                           {% if request.resolver_match.url_name == 'pending-approvals' %}class="active"{% endif %}>
+                            <i class="bi bi-clock-history"></i>
+                            承認待ち申請
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'applications:approval-board' %}" 
+                           {% if request.resolver_match.url_name == 'approval-board' %}class="active"{% endif %}>
+                            <i class="bi bi-kanban-fill"></i>
+                            承認管理ボード
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'applications:my-approval-history' %}" 
+                           {% if request.resolver_match.url_name == 'my-approval-history' %}class="active"{% endif %}>
+                            <i class="bi bi-journal-check"></i>
+                            承認履歴
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- 全体管理セクション -->
+            {% if user.is_staff %}
+            <div class="sidebar-section">
+                <h5>管理者機能</h5>
+                <ul class="sidebar-nav">
+                    <li>
+                        <a href="{% url 'applications:admin-application-list' %}" 
+                           {% if request.resolver_match.url_name == 'admin-application-list' %}class="active"{% endif %}>
+                            <i class="bi bi-list-ul"></i>
+                            全申請一覧
+                        </a>
+                    </li>
+                    <li>
+                        <a href="{% url 'applications:kanban-board' %}" 
+                           {% if request.resolver_match.url_name == 'kanban-board' %}class="active"{% endif %}>
+                            <i class="bi bi-columns"></i>
+                            全体カンバンボード
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Messages -->
+    {% if messages %}
+        <div class="container-fluid mt-3 {% if user.is_authenticated %}content-with-sidebar{% endif %}" id="messagesContainer">
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <!-- Main Content -->
+    <div class="main-content {% if user.is_authenticated %}content-with-sidebar{% endif %}" id="mainContent">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 通知機能 -->
+    {% if user.is_authenticated %}
+        <script src="{% static 'js/notifications.js' %}"></script>
+    {% endif %}
+    
+    <!-- サイドバー制御 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            const messagesContainer = document.getElementById('messagesContainer');
+            
+            // ローカルストレージからサイドバー状態を読み込み
+            const sidebarState = localStorage.getItem('sidebarState');
+            if (sidebarState === 'hidden') {
+                sidebar.classList.add('sidebar-hidden');
+                mainContent.classList.remove('content-with-sidebar');
+                mainContent.classList.add('content-no-sidebar');
+                if (messagesContainer) {
+                    messagesContainer.classList.remove('content-with-sidebar');
+                    messagesContainer.classList.add('content-no-sidebar');
+                }
+            }
+            
+            // サイドバートグルボタンのイベントリスナー
+            if (sidebarToggle && sidebar) {
+                sidebarToggle.addEventListener('click', function() {
+                    sidebar.classList.toggle('sidebar-hidden');
+                    mainContent.classList.toggle('content-with-sidebar');
+                    mainContent.classList.toggle('content-no-sidebar');
+                    
+                    if (messagesContainer) {
+                        messagesContainer.classList.toggle('content-with-sidebar');
+                        messagesContainer.classList.toggle('content-no-sidebar');
+                    }
+                    
+                    // サイドバー状態をローカルストレージに保存
+                    const isHidden = sidebar.classList.contains('sidebar-hidden');
+                    localStorage.setItem('sidebarState', isHidden ? 'hidden' : 'visible');
+                });
+            }
+        });
+    </script>
+    
+    <!-- Custom JS -->
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,81 @@
+[project]
+name = "carry-out-approval"
+version = "0.1.0"
+description = "Carry Out Approval System with Django and LDAP authentication"
+authors = [
+    {name = "kkzk", email = "admin@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Django==5.2.5",
+    "djangorestframework==3.16.1",
+    "Pillow==11.3.0",
+    "python-decouple==3.8",
+    "django-cors-headers==4.7.0",
+    "channels==4.2.0",
+    "channels-redis==4.2.0",
+    "redis==5.0.8",
+    "daphne==4.1.2",
+    "whitenoise==6.6.0",
+    "ldap3>=2.9.1",
+    "django-python3-ldap>=0.16.1",
+    "dotenv>=0.9.9",
+]
+
+[project.optional-dependencies]
+ldap = [
+    "ldap3>=2.9.0"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-django>=4.5.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.10.0"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["django/**/*.py", "django/**/*.html", "django/**/*.css", "django/**/*.js"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.venv
+  | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+skip_glob = ["*/migrations/*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "carry_out_approval.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+testpaths = ["django"]
+
+# Uvの設定
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-django>=4.5.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+    "isort>=5.10.0",
+]
+
+# Django固有の設定
+[tool.django]
+settings_module = "carry_out_approval.settings"

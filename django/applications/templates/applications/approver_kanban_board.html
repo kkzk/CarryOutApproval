@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}承認管理ボード - 承認申請管理システム{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'applications/css/kanban.css' %}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2>
+                        <i class="bi bi-kanban"></i> 
+                        承認管理ボード
+                        <small class="text-muted fs-6">（承認者として）</small>
+                    </h2>
+                    <small class="text-info">
+                        <i class="bi bi-arrow-left-right me-1"></i>
+                        カードをドラッグ&ドロップして状態を変更できます
+                    </small>
+                </div>
+                <div>
+                    <a href="{% url 'applications:pending-approvals' %}" class="btn btn-warning">
+                        <i class="fas fa-clock me-2"></i>承認待ち一覧
+                    </a>
+                    <a href="{% url 'applications:my-approval-history' %}" class="btn btn-outline-success">
+                        <i class="fas fa-history me-2"></i>承認履歴
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kanban Board -->
+    <div class="kanban-board">
+        <!-- 承認待ち -->
+        <div class="kanban-column">
+            <div class="kanban-header bg-warning text-dark">
+                <h5><i class="bi bi-clock-history"></i> 承認待ち ({{ pending_applications.count }})</h5>
+            </div>
+            <div class="kanban-body" id="pending-column" data-status="pending">
+                {% for application in pending_applications %}
+                    {% include 'applications/application_card.html' %}
+                {% empty %}
+                    <div class="text-muted text-center p-3">
+                        <i class="bi bi-inbox"></i><br>
+                        承認待ちの案件はありません
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 承認済み -->
+        <div class="kanban-column">
+            <div class="kanban-header bg-success text-white">
+                <h5><i class="bi bi-check-circle"></i> 承認済み ({{ approved_applications.count }})</h5>
+            </div>
+            <div class="kanban-body" id="approved-column" data-status="approved">
+                {% for application in approved_applications %}
+                    {% include 'applications/application_card.html' %}
+                {% empty %}
+                    <div class="text-muted text-center p-3">
+                        <i class="bi bi-inbox"></i><br>
+                        承認済みの案件はありません
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 却下 -->
+        <div class="kanban-column">
+            <div class="kanban-header bg-danger text-white">
+                <h5><i class="bi bi-x-circle"></i> 却下 ({{ rejected_applications.count }})</h5>
+            </div>
+            <div class="kanban-body" id="rejected-column" data-status="rejected">
+                {% for application in rejected_applications %}
+                    {% include 'applications/application_card.html' %}
+                {% empty %}
+                    <div class="text-muted text-center p-3">
+                        <i class="bi bi-inbox"></i><br>
+                        却下した案件はありません
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div id="detail-modal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" id="modal-content">
+            <!-- HTMXで動的に読み込み -->
+        </div>
+    </div>
+</div>
+
+<!-- 承認アクションモーダル -->
+<div class="modal fade" id="approvalActionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-check-square"></i> 承認アクション
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">
+                    <i class="bi bi-info-circle"></i> 
+                    カードをクリックして詳細を確認し、承認または却下の操作を行ってください。
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script src="{% static 'applications/js/kanban.js' %}"></script>
+<script>
+// WebSocket接続状態をユーザーに表示
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('承認者カンバンボード: DOMContentLoaded');
+    console.log('Sortable.js バージョン:', typeof Sortable !== 'undefined' ? 'OK' : 'NG');
+    
+    // 接続状態インジケーターを追加
+    const indicator = document.createElement('div');
+    indicator.id = 'ws-indicator';
+    indicator.className = 'position-fixed top-0 start-0 m-3 p-2 rounded bg-secondary text-white small';
+    indicator.style.zIndex = '1060';
+    indicator.innerHTML = '<i class="bi bi-circle-fill text-warning"></i> 接続中...';
+    document.body.appendChild(indicator);
+    
+    // WebSocket接続状態の更新
+    const originalOnOpen = websocket?.onopen;
+    const originalOnClose = websocket?.onclose;
+    
+    if (websocket) {
+        websocket.addEventListener('open', function() {
+            indicator.innerHTML = '<i class="bi bi-circle-fill text-success"></i> リアルタイム更新: ON';
+        });
+        
+        websocket.addEventListener('close', function() {
+            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> リアルタイム更新: OFF';
+        });
+        
+        websocket.addEventListener('error', function() {
+            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> 接続エラー';
+        });
+    }
+    
+    // 5秒後にインジケーターを透明にする
+    setTimeout(() => {
+        indicator.style.opacity = '0.7';
+    }, 5000);
+    
+    // デバッグ用：Sortableインスタンス確認
+    setTimeout(() => {
+        const columns = document.querySelectorAll('.kanban-body');
+        console.log('カンバンカラム数:', columns.length);
+        
+        columns.forEach((column, index) => {
+            const sortableInstance = Sortable.get(column);
+            const cards = column.querySelectorAll('.application-card');
+            
+            console.log(`カラム${index + 1}:`, {
+                element: column.id,
+                hasSortable: !!sortableInstance,
+                disabled: sortableInstance ? sortableInstance.option('disabled') : 'N/A',
+                cardCount: cards.length
+            });
+            
+            // カードのスタイルとドラッグ可能性をチェック
+            cards.forEach((card, cardIndex) => {
+                console.log(`  カード${cardIndex + 1}:`, {
+                    id: card.dataset.id,
+                    status: card.dataset.status,
+                    cursor: window.getComputedStyle(card).cursor,
+                    draggable: card.draggable
+                });
+            });
+        });
+    }, 1000);
+});
+</script>
+{% endblock %}

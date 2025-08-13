@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket接続テスト</title>
+</head>
+<body>
+    <h1>WebSocket接続テスト</h1>
+    
+    <!-- ログイン状態の表示 -->
+    <div id="login-status">
+        {% if user.is_authenticated %}
+            <p>ログイン中: {{ user.username }} (<a href="{% url 'users:logout' %}">ログアウト</a>)</p>
+        {% else %}
+            <p>未ログイン (<a href="{% url 'users:login' %}">ログイン</a>)</p>
+        {% endif %}
+    </div>
+    
+    <div id="status">接続状態: 未接続</div>
+    <div id="messages"></div>
+    <button id="connect">接続</button>
+    <button id="disconnect">切断</button>
+    <button id="ping">Ping送信</button>
+
+    <script>
+        let socket = null;
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        
+        // ログイン状態をチェック
+        const isAuthenticated = {{ user.is_authenticated|yesno:"true,false" }};
+        
+        if (!isAuthenticated) {
+            addMessage('警告: WebSocket接続にはログインが必要です');
+        }
+        
+        function updateStatus(status) {
+            statusDiv.textContent = `接続状態: ${status}`;
+        }
+        
+        function addMessage(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        document.getElementById('connect').addEventListener('click', () => {
+            if (!isAuthenticated) {
+                addMessage('エラー: ログインしてください');
+                return;
+            }
+            
+            if (socket) {
+                socket.close();
+            }
+            
+            // WebSocket接続を作成
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/notifications/`;
+            
+            addMessage(`接続試行中: ${wsUrl}`);
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(event) {
+                updateStatus('接続済み');
+                addMessage('WebSocket接続が開始されました');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                addMessage(`受信: ${JSON.stringify(data)}`);
+            };
+            
+            socket.onclose = function(event) {
+                updateStatus('切断');
+                addMessage(`WebSocket接続が終了されました (コード: ${event.code}, 理由: ${event.reason || '不明'})`);
+            };
+            
+            socket.onerror = function(error) {
+                updateStatus('エラー');
+                addMessage(`WebSocketエラー: ${error}`);
+            };
+        });
+        
+        document.getElementById('disconnect').addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+            }
+        });
+        
+        document.getElementById('ping').addEventListener('click', () => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'ping' }));
+                addMessage('Pingを送信しました');
+            } else {
+                addMessage('WebSocketが接続されていません');
+            }
+        });
+    </script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        #login-status {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border: 1px solid #2196f3;
+        }
+        
+        #status {
+            font-weight: bold;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #f9f9f9;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</body>
+</html>

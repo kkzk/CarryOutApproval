@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+
+{% block title %}セッション管理{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- ヘッダー -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-users-cog me-2"></i>セッション管理</h2>
+                <div>
+                    <a href="{% url 'applications:kanban-board' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>戻る
+                    </a>
+                </div>
+            </div>
+
+            <!-- 現在のユーザー情報 -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-user me-2"></i>現在のユーザー情報
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>ユーザー名:</strong> {{ user.username }}</p>
+                            <p><strong>表示名:</strong> {{ user.get_full_name|default:"未設定" }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>現在のセッション:</strong> {{ current_session_key|truncatechars:20 }}</p>
+                            <p><strong>アクティブセッション数:</strong> {{ user_sessions|length }}個</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- アクティブセッション一覧 -->
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-list me-2"></i>アクティブセッション一覧
+                    </h5>
+                    {% if user_sessions|length > 1 %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete_others">
+                            <button type="submit" class="btn btn-sm btn-warning" 
+                                    onclick="return confirm('他のセッションをすべて削除しますか？');">
+                                <i class="fas fa-trash me-1"></i>他のセッションを削除
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if user_sessions %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>セッション</th>
+                                        <th>作成日時</th>
+                                        <th>有効期限</th>
+                                        <th>ユーザーエージェント</th>
+                                        <th>IPアドレス</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for session in user_sessions %}
+                                        <tr {% if session.is_current %}class="table-success"{% endif %}>
+                                            <td>
+                                                {% if session.is_current %}
+                                                    <span class="badge bg-success me-2">現在</span>
+                                                {% endif %}
+                                                <code>{{ session.session_key|truncatechars:20 }}</code>
+                                            </td>
+                                            <td>
+                                                {% if session.created %}
+                                                    {{ session.created|date:"Y/m/d H:i:s" }}
+                                                {% else %}
+                                                    <span class="text-muted">不明</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <small>{{ session.expire_date|date:"Y/m/d H:i:s" }}</small>
+                                            </td>
+                                            <td>
+                                                {% with ua=session.session_data.user_agent %}
+                                                    {% if ua %}
+                                                        <span title="{{ ua }}">{{ ua|truncatechars:30 }}</span>
+                                                    {% else %}
+                                                        <span class="text-muted">不明</span>
+                                                    {% endif %}
+                                                {% endwith %}
+                                            </td>
+                                            <td>
+                                                {% with ip=session.session_data.ip_address %}
+                                                    {% if ip %}
+                                                        {{ ip }}
+                                                    {% else %}
+                                                        <span class="text-muted">不明</span>
+                                                    {% endif %}
+                                                {% endwith %}
+                                            </td>
+                                            <td>
+                                                {% if not session.is_current %}
+                                                    <form method="post" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="action" value="delete_session">
+                                                        <input type="hidden" name="session_key" value="{{ session.session_key }}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                                onclick="return confirm('このセッションを削除しますか？');">
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                {% else %}
+                                                    <span class="text-muted">現在のセッション</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-exclamation-triangle fa-2x text-warning mb-3"></i>
+                            <h5>アクティブなセッションがありません</h5>
+                            <p class="text-muted">現在ログイン中のセッションが見つかりませんでした。</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- 注意事項 -->
+            <div class="alert alert-info mt-4">
+                <h6><i class="fas fa-info-circle me-2"></i>セッション管理について</h6>
+                <ul class="mb-0">
+                    <li>複数のブラウザや端末からログインしている場合、それぞれ個別のセッションが作成されます</li>
+                    <li>他のセッションを削除すると、該当する端末・ブラウザからログアウトされます</li>
+                    <li>現在のセッションは削除できません</li>
+                    <li>セッションは設定された期間（24時間）後に自動的に削除されます</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.table-success {
+    background-color: rgba(25, 135, 84, 0.1) !important;
+}
+
+code {
+    font-size: 0.875rem;
+}
+
+.btn-sm {
+    font-size: 0.775rem;
+}
+</style>
+{% endblock %}

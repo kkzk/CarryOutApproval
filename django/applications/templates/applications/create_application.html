@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- ヘッダー -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-plus-circle me-2"></i>{{ title }}</h2>
+                <div>
+                    <a href="{% url 'applications:kanban-board' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>戻る
+                    </a>
+                </div>
+            </div>
+
+            <!-- 申請作成フォーム -->
+            <div class="row justify-content-center">
+                <div class="col-lg-8 col-xl-6">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-file-upload me-2"></i>申請情報入力
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            {% if messages %}
+                                {% for message in messages %}
+                                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                                        {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+
+                            <form method="post" enctype="multipart/form-data" id="applicationForm">
+                                {% csrf_token %}
+                                
+                                <!-- 承認者選択 -->
+                                <div class="mb-3">
+                                    <label for="{{ form.approver.id_for_label }}" class="form-label required">
+                                        <i class="fas fa-user-check me-1"></i>{{ form.approver.label }}
+                                    </label>
+                                    {{ form.approver }}
+                                    {% if form.approver.help_text %}
+                                        <div class="form-text">{{ form.approver.help_text }}</div>
+                                    {% endif %}
+                                    {% if form.approver.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in form.approver.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- ファイル選択 -->
+                                <div class="mb-3">
+                                    <label for="{{ form.file.id_for_label }}" class="form-label required">
+                                        <i class="fas fa-file me-1"></i>{{ form.file.label }}
+                                    </label>
+                                    {{ form.file }}
+                                    {% if form.file.help_text %}
+                                        <div class="form-text">{{ form.file.help_text }}</div>
+                                    {% endif %}
+                                    {% if form.file.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in form.file.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        最大ファイルサイズ: 10MB（対応形式：PDF, Word, Excel, 画像等）
+                                    </div>
+                                </div>
+
+                                <!-- 申請コメント -->
+                                <div class="mb-4">
+                                    <label for="{{ form.comment.id_for_label }}" class="form-label">
+                                        <i class="fas fa-comment me-1"></i>{{ form.comment.label }}
+                                    </label>
+                                    {{ form.comment }}
+                                    {% if form.comment.help_text %}
+                                        <div class="form-text">{{ form.comment.help_text }}</div>
+                                    {% endif %}
+                                    {% if form.comment.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {% for error in form.comment.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">
+                                        申請理由や詳細な説明を記入してください。
+                                    </div>
+                                </div>
+
+                                <!-- 送信ボタン -->
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                        <i class="fas fa-paper-plane me-2"></i>申請を作成
+                                    </button>
+                                    <a href="{% url 'applications:kanban-board' %}" class="btn btn-outline-secondary">
+                                        <i class="fas fa-times me-2"></i>キャンセル
+                                    </a>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 注意事項 -->
+                    <div class="card mt-4">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="card-title mb-0">
+                                <i class="fas fa-exclamation-triangle me-2"></i>申請時の注意事項
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="mb-0">
+                                <li>申請内容は承認者によって審査されます</li>
+                                <li>ファイルは安全に保管され、承認後は専用フォルダに移動されます</li>
+                                <li>申請状況はカンバンボードで確認できます</li>
+                                <li>承認者からのコメントがある場合は通知されます</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.required::after {
+    content: " *";
+    color: #dc3545;
+}
+
+.card {
+    border: none;
+    border-radius: 10px;
+}
+
+.card-header {
+    border-radius: 10px 10px 0 0 !important;
+}
+
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.btn {
+    border-radius: 8px;
+}
+
+#submitBtn {
+    position: relative;
+}
+
+#submitBtn:disabled {
+    opacity: 0.7;
+}
+
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('applicationForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const fileInput = document.querySelector('input[type="file"]');
+    
+    // ファイル選択時の処理
+    if (fileInput) {
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                // ファイルサイズチェック (10MB)
+                const maxSize = 10 * 1024 * 1024;
+                if (file.size > maxSize) {
+                    alert('ファイルサイズが大きすぎます。10MB以下のファイルを選択してください。');
+                    this.value = '';
+                    return;
+                }
+                
+                // ファイル名表示
+                const fileName = file.name;
+                const fileSize = (file.size / 1024 / 1024).toFixed(2);
+                console.log(`選択されたファイル: ${fileName} (${fileSize}MB)`);
+            }
+        });
+    }
+    
+    // フォーム送信時の処理
+    form.addEventListener('submit', function(e) {
+        // 二重送信防止
+        if (submitBtn.disabled) {
+            e.preventDefault();
+            return;
+        }
+        
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>送信中...';
+        
+        // タイムアウト設定（30秒）
+        setTimeout(() => {
+            if (submitBtn.disabled) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-paper-plane me-2"></i>申請を作成';
+            }
+        }, 30000);
+    });
+});
+</script>
+{% endblock %}
