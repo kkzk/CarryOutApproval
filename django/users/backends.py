@@ -340,8 +340,13 @@ class WindowsLDAPBackend(ModelBackend):
                 )
                 return []
             
-            # OU階層を抽出
-            ou_hierarchy = self._extract_ou_hierarchy(user_dn)
+            # OU階層を抽出（仕様変更: 自OU + 1階層上のみ）
+            full_hierarchy = self._extract_ou_hierarchy(user_dn)
+            if full_hierarchy:
+                # full_hierarchy は下位->上位順。index 0 が自OU、1 が親OU (存在すれば)
+                ou_hierarchy = full_hierarchy[:2]
+            else:
+                ou_hierarchy = []
             approvers = []
             
             # 各OU階層のユーザーを検索
