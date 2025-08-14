@@ -40,16 +40,21 @@
                                 
                                 <!-- 承認者選択 -->
                                 <div class="mb-3">
-                                    <label for="{{ form.approver.id_for_label }}" class="form-label required">
+                                    <label class="form-label required">
                                         <i class="fas fa-user-check me-1"></i>{{ form.approver.label }}
                                     </label>
-                                    {{ form.approver }}
-                                    {% if form.approver.help_text %}
-                                        <div class="form-text">{{ form.approver.help_text }}</div>
-                                    {% endif %}
-                                    {% if form.approver.errors %}
+                                    <div class="position-relative">
+                                        <input type="text" id="approverSearch" class="form-control" placeholder="氏名/ユーザ名/メールで検索" autocomplete="off" />
+                                        <input type="hidden" name="approver" id="approverHidden" value="{{ form.data.approver|default:'' }}" />
+                                        <div id="approverDropdown" class="list-group shadow" style="max-height:260px; overflow:auto; position:absolute; width:100%; z-index: 1050; display:none;"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center mt-1">
+                                        <div class="form-text mb-0">同一OU階層のメンバーから承認者を選択してください。</div>
+                                        <button type="button" id="approverResyncBtn" class="btn btn-sm btn-outline-secondary">再同期</button>
+                                    </div>
+                                    {% if form.errors.approver %}
                                         <div class="invalid-feedback d-block">
-                                            {% for error in form.approver.errors %}{{ error }}{% endfor %}
+                                            {% for error in form.errors.approver %}{{ error }}{% endfor %}
                                         </div>
                                     {% endif %}
                                 </div>
@@ -177,6 +182,103 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('applicationForm');
     const submitBtn = document.getElementById('submitBtn');
     const fileInput = document.querySelector('input[type="file"]');
+    // 承認者検索用データ
+    // 候補JSONをscriptタグ経由で安全に取得
+    console.log('[create_application] DOMContentLoaded start');
+    let approverCandidates = [];
+    try {
+        const dataEl = document.getElementById('approver-candidates-data');
+        if (dataEl) {
+            approverCandidates = JSON.parse(dataEl.textContent || '[]');
+        } else {
+            console.warn('[create_application] approver-candidates-data element not found');
+        }
+    } catch (e) {
+        const raw = document.getElementById('approver-candidates-data')?.textContent;
+        console.error('[create_application] approverCandidates JSON parse error', e, 'raw=', raw);
+    }
+    const approverSearch = document.getElementById('approverSearch');
+    const approverHidden = document.getElementById('approverHidden');
+    const approverDropdown = document.getElementById('approverDropdown');
+    const resyncBtn = document.getElementById('approverResyncBtn');
+    if (!resyncBtn) {
+        console.warn('[create_application] resync button not found');
+    } else {
+        console.log('[create_application] resync button found');
+    }
+
+    function renderApproverList(keyword='') {
+        const kw = keyword.trim().toLowerCase();
+        const filtered = approverCandidates.filter(a => {
+            return !kw || [a.display_name, a.username, a.email, a.ou].some(v => (v||'').toLowerCase().includes(kw));
+        }).slice(0, 100); // 最大表示件数制限
+        if (!filtered.length) {
+            approverDropdown.innerHTML = '<div class="list-group-item text-muted">候補がありません</div>';
+        } else {
+            approverDropdown.innerHTML = filtered.map(a => `
+                <button type="button" class="list-group-item list-group-item-action" data-username="${a.username}">
+                    <div class="d-flex w-100 justify-content-between">
+                        <strong>${a.display_name || a.username}</strong>
+                        <small class="text-muted">${a.ou||''}</small>
+                    </div>
+                    <div class="small text-muted">${a.username}${a.email?(' / '+a.email):''}</div>
+                </button>`).join('');
+        }
+        approverDropdown.style.display = 'block';
+    }
+
+    approverSearch.addEventListener('focus', () => renderApproverList(approverSearch.value));
+    approverSearch.addEventListener('input', () => renderApproverList(approverSearch.value));
+    document.addEventListener('click', (e) => {
+        if (!approverDropdown.contains(e.target) && e.target !== approverSearch) {
+            approverDropdown.style.display = 'none';
+        }
+    });
+    approverDropdown.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-username]');
+        if (btn) {
+            const username = btn.getAttribute('data-username');
+            const candidate = approverCandidates.find(a => a.username === username);
+            approverHidden.value = username;
+            approverSearch.value = candidate ? `${candidate.display_name} (${candidate.username})` : username;
+            approverDropdown.style.display = 'none';
+        }
+    });
+    // 再同期
+    resyncBtn.addEventListener('click', async () => {
+        resyncBtn.disabled = true;
+        const original = resyncBtn.textContent;
+        resyncBtn.textContent = '同期中...';
+            console.log('[create_application] resync click');
+        try {
+            const resp = await fetch('/users/approvers/resync/', {credentials: 'same-origin'});
+                console.log('[create_application] fetch /users/approvers/resync/ start');
+            if (!resp.ok) throw new Error('sync failed');
+            const data = await resp.json();
+                console.log('[create_application] fetch status', resp.status);
+            if (data.ok) {
+                approverCandidates.length = 0; // 既存配列をクリア
+                data.candidates.forEach(c => approverCandidates.push(c));
+                renderApproverList(approverSearch.value);
+                    console.log('[create_application] candidates updated count=' + approverCandidates.length);
+            } else {
+                alert('再同期に失敗: ' + (data.error || 'unknown'));
+            }
+        } catch (e) {
+            console.error(e);
+            alert('再同期エラー');
+        } finally {
+            resyncBtn.disabled = false;
+            resyncBtn.textContent = original;
+        }
+    });
+    // 既存値の再表示
+    if (approverHidden.value) {
+        const candidate = approverCandidates.find(a => a.username === approverHidden.value);
+        if (candidate) {
+            approverSearch.value = `${candidate.display_name} (${candidate.username})`;
+        }
+    }
     
     // ファイル選択時の処理
     if (fileInput) {
@@ -220,4 +322,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+{% comment %} 正しいJSONを出力 (Pythonリスト表現のシングルクォートを避ける) {% endcomment %}
+{{ approver_candidates|json_script:"approver-candidates-data" }}
+<!-- TEMPLATE_VERSION_MARKER: v2 -->
 {% endblock %}

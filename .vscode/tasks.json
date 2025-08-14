@@ -345,5 +345,41 @@
             },
             "dependsOn": "Django: Collect Static Files"
         }
+        ,
+        {
+            "label": "Django: ASGI Dev (uvicorn --reload)",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "uvicorn",
+                "carry_out_approval.asgi:application",
+                "--host","127.0.0.1",
+                "--port","8000",
+                "--reload",
+                "--reload-dir",".",
+                "--reload-dir","applications/templates",
+                "--reload-dir","notifications",
+                "--reload-dir","templates"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/django"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "new"
+            },
+            "problemMatcher": [],
+            "isBackground": true,
+            "runOptions": {
+                "runOn": "default"
+            }
+        }
     ]
 }

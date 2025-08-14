@@ -251,12 +251,29 @@ class WindowsLDAPBackend(ModelBackend):
 
     def _update_user_profile(self, user, entry):
         try:
-            from .models import UserProfile  # 遅延 import
+            from .models import UserProfile, UserSource  # 遅延 import
             profile, _ = UserProfile.objects.get_or_create(user=user)
-            profile.ldap_dn = str(getattr(entry, 'distinguishedName', '') or '')
-            profile.department_name = str(getattr(entry, 'department', '') or '')
-            profile.title = str(getattr(entry, 'title', '') or '')
+            # LDAP経由でログインできた時点で出所をLDAPに設定
+            if profile.source != UserSource.LDAP:
+                profile.source = UserSource.LDAP
+            from django.utils import timezone
+            new_dn = str(getattr(entry, 'distinguishedName', '') or '')
+            new_dept = str(getattr(entry, 'department', '') or '')
+            new_title = str(getattr(entry, 'title', '') or '')
+            changed = []
+            if profile.ldap_dn != new_dn:
+                changed.append('ldap_dn')
+                profile.ldap_dn = new_dn
+            if profile.department_name != new_dept:
+                changed.append('department_name')
+                profile.department_name = new_dept
+            if profile.title != new_title:
+                changed.append('title')
+                profile.title = new_title
+            profile.last_synced_at = timezone.now()
             profile.save()
+            if changed:
+                logger.info("LDAP profile fields changed | user=%s changed=%s", user.username, ','.join(changed))
         except Exception:  # noqa: BLE001
             logger.debug("UserProfile 更新をスキップ (存在しない/エラー)")
 

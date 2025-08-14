@@ -3,7 +3,7 @@
 """
 from django.contrib.auth.models import User
 from .backends import WindowsLDAPBackend
-from .models import UserProfile
+from .models import UserProfile, UserSource
 
 
 def get_approvers_for_user(user):
@@ -30,6 +30,7 @@ def get_approvers_for_user(user):
                 django_user = User.objects.get(username=ldap_user['username'])
                 django_approvers.append({
                     'user': django_user,
+                    'username': django_user.username,
                     'display_name': ldap_user['display_name'],
                     'email': ldap_user['email'],
                     'ou': ldap_user['ou']
@@ -70,11 +71,13 @@ def create_user_from_ldap_info(username, display_name, email, ldap_dn):
         )
         user.set_unusable_password()
         user.save()
-        
-        # ユーザープロファイルを作成
-        profile, created = UserProfile.objects.get_or_create(user=user)
+
+    # プロファイル更新/作成（常に実施）
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.source = UserSource.LDAP
+    if ldap_dn:
         profile.ldap_dn = ldap_dn
-        profile.save()
+    profile.save()
     
     return user
 

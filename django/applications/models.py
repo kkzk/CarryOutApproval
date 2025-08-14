@@ -93,10 +93,12 @@ class Application(models.Model):
 @receiver(post_save, sender=Application)
 def handle_application_changes(sender, instance, created, **kwargs):
     """申請の作成・変更時の処理"""
+    from django.conf import settings
+    notifications_on = getattr(settings, 'NOTIFICATIONS_ENABLED', True)
     if created:
-        # 新規申請の場合、承認者に通知
-        from notifications.services import NotificationService
-        NotificationService.notify_new_application(instance)
+        if notifications_on:
+            from notifications.services import NotificationService
+            NotificationService.notify_new_application(instance)
     elif not created:
         # ステータス変更時の処理
         if instance.status == ApprovalStatus.APPROVED and not instance.approved_at:
@@ -107,11 +109,10 @@ def handle_application_changes(sender, instance, created, **kwargs):
             # 承認済みディレクトリへの移動処理
             # move_file_to_approved_directory(instance)
             
-            # 承認通知の送信
-            from notifications.services import NotificationService
-            NotificationService.notify_application_approved(instance)
+            if notifications_on:
+                from notifications.services import NotificationService
+                NotificationService.notify_application_approved(instance)
             
-        elif instance.status == ApprovalStatus.REJECTED:
-            # 却下時の通知
+        elif instance.status == ApprovalStatus.REJECTED and notifications_on:
             from notifications.services import NotificationService
             NotificationService.notify_application_rejected(instance)

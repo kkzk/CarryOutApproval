@@ -32,7 +32,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         else:
             # 一般ユーザーは自分の申請と自分が承認者の申請のみ
             return Application.objects.filter(
-                models.Q(applicant=user) | models.Q(approver=user)
+                models.Q(applicant=user.username) | models.Q(approver=user.username)
             ).distinct()
     
     def get_serializer_class(self):
@@ -45,17 +45,14 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         """申請作成時の処理"""
-        application = serializer.save(applicant=self.request.user)
-        
-        # 監査ログを記録
+        application = serializer.save(applicant=self.request.user.username)
+        # 監査ログ
         AuditLog.objects.create(
             user=self.request.user,
             application=application,
             action="create",
             details=f"申請を作成しました。ファイル: {application.original_filename}"
         )
-        
-        # 承認者に通知を送信
         from notifications.services import NotificationService
         NotificationService.notify_new_application(application)
     
@@ -63,47 +60,34 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     def update_status(self, request, pk=None):
         """申請ステータス更新"""
         application = self.get_object()
-        
-        # 承認権限チェック
-        if application.approver != request.user:
-            return Response(
-                {'error': 'この申請を承認する権限がありません。'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+        # 権限チェック
+        if application.approver != request.user.username:
+            return Response({'error': 'この申請を承認する権限がありません。'}, status=status.HTTP_403_FORBIDDEN)
         serializer = self.get_serializer(application, data=request.data, partial=True)
-        if serializer.is_valid():
-            with transaction.atomic():
-                old_status = application.status
-                serializer.save()
-                
-                # 通知サービスのインポート
-                from notifications.services import NotificationService
-                
-                # 監査ログを記録
-                if application.status == ApprovalStatus.APPROVED:
-                    action = "approve"
-                    details = f"申請を承認しました。コメント: {application.approval_comment or 'なし'}"
-                    # 承認通知を送信
-                    NotificationService.notify_application_approved(application)
-                elif application.status == ApprovalStatus.REJECTED:
-                    action = "reject"
-                    details = f"申請を拒否しました。コメント: {application.approval_comment or 'なし'}"
-                    # 却下通知を送信
-                    NotificationService.notify_application_rejected(application)
-                else:
-                    action = "update_status"
-                    details = f"ステータスを {old_status} から {application.status} に変更しました。"
-                
-                AuditLog.objects.create(
-                    user=request.user,
-                    application=application,
-                    action=action,
-                    details=details
-                )
-            
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            old_status = application.status
+            serializer.save()
+            from notifications.services import NotificationService
+            if application.status == ApprovalStatus.APPROVED:
+                action = "approve"
+                details = f"申請を承認しました。コメント: {application.approval_comment or 'なし'}"
+                NotificationService.notify_application_approved(application)
+            elif application.status == ApprovalStatus.REJECTED:
+                action = "reject"
+                details = f"申請を拒否しました。コメント: {application.approval_comment or 'なし'}"
+                NotificationService.notify_application_rejected(application)
+            else:
+                action = "update_status"
+                details = f"ステータスを {old_status} から {application.status} に変更しました。"
+            AuditLog.objects.create(
+                user=request.user,
+                application=application,
+                action=action,
+                details=details
+            )
+        return Response(serializer.data)
 
 
 class MyApplicationListView(generics.ListAPIView):
@@ -112,7 +96,7 @@ class MyApplicationListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        return Application.objects.filter(applicant=self.request.user)
+        return Application.objects.filter(applicant=self.request.user.username)
 
 
 class PendingApplicationListView(generics.ListAPIView):
@@ -122,7 +106,7 @@ class PendingApplicationListView(generics.ListAPIView):
     
     def get_queryset(self):
         return Application.objects.filter(
-            approver=self.request.user,
+            approver=self.request.user.username,
             status=ApprovalStatus.PENDING
         )
 
@@ -139,9 +123,8 @@ def update_application_status(request):
         comment = request.POST.get('comment', '')
         
         application = get_object_or_404(Application, id=application_id)
-        
         # 権限チェック
-        if application.approver != request.user and not request.user.is_staff:
+        if application.approver != request.user.username and not request.user.is_staff:
             return JsonResponse({'error': '権限がありません'}, status=403)
         
         old_status = application.status
@@ -200,8 +183,8 @@ def application_card(request, pk):
     application = get_object_or_404(Application, pk=pk)
     
     # アクセス権限チェック
-    if not (application.applicant == request.user or 
-            application.approver == request.user or 
+    if not (application.applicant == request.user.username or 
+            application.approver == request.user.username or 
             request.user.is_staff):
         return JsonResponse({'error': 'アクセス権限がありません'}, status=403)
     
@@ -242,10 +225,28 @@ def create_application(request):
                 messages.error(request, f'申請の作成中にエラーが発生しました: {str(e)}')
     else:
         form = ApplicationCreateForm(user=request.user)
-    
+    # 同一OU階層の承認者候補を取得
+    from users.utils import get_approvers_for_user
+    approver_candidates = []
+    if request.user.is_authenticated:
+        approver_candidates = get_approvers_for_user(request.user) or []
+    # 自分自身は除外
+    approver_candidates = [a for a in approver_candidates if a.get('username') != request.user.username]
+
+    # JSONシリアライズ可能な形だけに整理（念のため）
+    safe_candidates = [
+        {
+            'username': c.get('username') or '',
+            'display_name': c.get('display_name') or c.get('username') or '',
+            'email': c.get('email') or '',
+            'ou': c.get('ou') or ''
+        } for c in approver_candidates
+    ]
+
     return render(request, 'applications/create_application.html', {
         'form': form,
-        'title': '新規申請作成'
+        'title': '新規申請作成',
+        'approver_candidates': safe_candidates
     })
 
 
@@ -341,7 +342,7 @@ def admin_application_list(request):
 def my_applications(request):
     """自分の申請一覧"""
     applications = Application.objects.filter(
-        applicant=request.user
+    applicant=request.user.username
     ).order_by('-created_at')
     
     # ページネーション
@@ -362,7 +363,7 @@ def my_applications(request):
 def my_applications_board(request):
     """自分の申請状況ボード（申請者として）"""
     applications = Application.objects.filter(
-        applicant=request.user
+    applicant=request.user.username
     ).order_by('-created_at')
     
     # ステータスごとに分類
@@ -386,7 +387,7 @@ def my_applications_board(request):
 def pending_approvals(request):
     """承認待ち申請一覧（承認者として）"""
     applications = Application.objects.filter(
-        approver=request.user,
+    approver=request.user.username,
         status=ApprovalStatus.PENDING
     ).order_by('-created_at')
     
@@ -409,7 +410,7 @@ def pending_approvals(request):
 def approval_board(request):
     """承認管理ボード（承認者として）"""
     applications = Application.objects.filter(
-        approver=request.user
+    approver=request.user.username
     ).order_by('-created_at')
     
     # ステータスごとに分類
@@ -433,7 +434,7 @@ def approval_board(request):
 def my_approval_history(request):
     """承認履歴（承認者として）"""
     applications = Application.objects.filter(
-        approver=request.user
+    approver=request.user.username
     ).exclude(status=ApprovalStatus.PENDING).order_by('-updated_at')
     
     # ページネーション
@@ -455,9 +456,9 @@ def my_approval_history(request):
 def kanban_board(request):
     """カンバンボード - ユーザーのロールに応じて適切なボードにリダイレクト"""
     # 承認者として何かの申請を持っている場合は承認ボードを表示
-    has_approvals = Application.objects.filter(approver=request.user).exists()
+    has_approvals = Application.objects.filter(approver=request.user.username).exists()
     # 申請者として何かの申請を持っている場合は申請ボードを表示
-    has_applications = Application.objects.filter(applicant=request.user).exists()
+    has_applications = Application.objects.filter(applicant=request.user.username).exists()
     
     # URLパラメータで表示モードを指定できるようにする
     view_mode = request.GET.get('view', None)

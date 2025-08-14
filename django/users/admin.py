@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import UserProfile
+from .models import UserProfile, UserSource
 
 
 class UserProfileInline(admin.StackedInline):
@@ -24,7 +24,7 @@ admin.site.register(User, UserAdmin)
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """ユーザープロファイル管理"""
-    list_display = ('user', 'department_name', 'title', 'ldap_dn')
-    list_filter = ('department_name', 'title')
-    search_fields = ('user__username', 'user__first_name', 'user__last_name', 'department_name')
-    readonly_fields = ('ldap_dn',)
+    list_display = ('user', 'source', 'department_name', 'title', 'ldap_dn')
+    list_filter = ('source', 'department_name', 'title')
+    search_fields = ('user__username', 'user__first_name', 'user__last_name', 'department_name', 'ldap_dn')
+    readonly_fields = ('ldap_dn', 'source')

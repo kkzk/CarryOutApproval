@@ -56,6 +56,9 @@ INSTALLED_APPS = [
     'notifications',
 ]
 
+# 通知機能 ON/OFF フラグ（後で復活予定）
+NOTIFICATIONS_ENABLED = False  # 一時停止中。復活時 True に変更または環境変数化
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',

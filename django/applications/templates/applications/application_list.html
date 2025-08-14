@@ -97,13 +97,13 @@
                                             <td>
                                                 <div class="d-flex align-items-center">
                                                     <i class="fas fa-user me-2 text-muted"></i>
-                                                    {{ application.applicant.get_full_name|default:application.applicant.username }}
+                                                    {{ application.applicant }}
                                                 </div>
                                             </td>
                                             <td>
                                                 <div class="d-flex align-items-center">
                                                     <i class="fas fa-user-check me-2 text-muted"></i>
-                                                    {{ application.approver.get_full_name|default:application.approver.username }}
+                                                    {{ application.approver }}
                                                 </div>
                                             </td>
                                             <td>
