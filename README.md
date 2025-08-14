@@ -142,6 +142,82 @@ AUTHENTICATION_BACKENDS = [
 python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
+## Active Directory (Windows Server 2025) の LDAP 署名既定変更への対応
+
+Windows Server 2025 のドメイン コントローラー (DC) では、従来のポリシー設定 (LDAPServerIntegrity / LdapEnforceChannelBinding) だけではなく、
+新しいポリシー / レジストリ `ドメイン コントローラー: LDAP サーバの署名要件の適用 (ldapserverenforceintegrity)` が導入され、
+既定 (値なし / 有効) 状態でも LDAP 署名 (署名 / 封印, integrity 保護) が要求される仕様になりました。
+
+### 影響概要
+- 2025 DC では平文 389/TCP の SIMPLE / NTLM バインドが、保護なし (署名 / TLS 無し) の場合 `strongerAuthRequired (resultCode=8)` を返すケースが増える
+- 従来ポリシーを「なし」にしても、新ポリシーが有効 (未定義 = 1) なら平文バインドは拒否される
+- 新ポリシーを「無効 (0)」に設定した場合にのみ従来ポリシーの値が再び意味を持つ
+- ポリシーを一度 無効→未定義 に戻しても “既定(有効)” ではなく “無効(0)” に保持される挙動に注意 (検証時の再設定漏れ防止)
+
+### 代表的な LDAP 応答コードと意味
+| コード | AD サブコード例 | 意味 | 対処の主眼 |
+|--------|----------------|------|------------|
+| 8 (strongerAuthRequired) | message に "The server requires binds to turn on integrity checking" | 保護 (署名/封印 または TLS) 不足 | StartTLS / LDAPS を有効にする |
+| 49 (invalidCredentials) data 52e | AcceptSecurityContext error | ユーザー/パスワード不一致 | 資格情報再確認 |
+| 49 data 775 | アカウント ロックアウト | ロック解除 |
+| 49 data 532 | パスワード期限切れ | パスワード更新 |
+
+### 推奨構成
+運用では (A) LDAPS 直 (636/TCP) か (B) StartTLS を必須化し、平文 fallback は限定的な検証時のみ許可。
+
+#### 設定例 (環境変数 / settings.py)
+```python
+# LDAPS 利用 (証明書がバインド済みの場合)
+LDAP_SERVER_URL = "ldaps://dc01.example.com:636"
+LDAP_USE_SSL = True               # 直接 LDAPS
+LDAP_FORCE_STARTTLS = False       # LDAPS 利用時は不要
+
+# StartTLS 利用 (389 → TLS へ昇格)
+LDAP_SERVER_URL = "ldap://dc01.example.com:389"
+LDAP_USE_SSL = False
+LDAP_FORCE_STARTTLS = True        # バインド前に StartTLS
+
+# 診断用一時緩和 (本番禁止)
+LDAP_ALLOW_PLAIN_FALLBACK = True  # StartTLS/LDAPS 失敗時に平文を試す (一時 / 開発のみ)
+LDAP_TLS_INSECURE = True          # 証明書検証を一時的に無効 (自己署名テスト)
+```
+`LDAP_TLS_INSECURE` は自己署名/未信頼証明書で一時診断する際のみ。成功後は **必ず False** に戻し、CA 配布 or 正式証明書を導入する。
+
+### 証明書 (LDAPS) 有効化の代表パス
+1. AD CS (Enterprise CA) を構築 → DC が自動で正しい証明書を取得 (サブジェクト = FQDN)
+2. 既存/private CA や 公開 CA から DC FQDN 用サーバ証明書 (Server Authentication) を発行し、DC の 個人/コンピュータ 証明書ストアへ配置
+3. サービス再起動または数分待機後、`ldp.exe` で 636/TCP に接続確認
+
+### トラブル発生時の診断ステップ
+1. FQDN で接続しているか (IP は Kerberos/SPN 解決不可 → 署名条件未達になる要因)
+2. StartTLS 成功可否 (失敗なら証明書 / ファイアウォール / 中間装置を確認)
+3. アプリログで code=8 → TLS 化後に code=49 (52e) に変化したら “保護問題解消”
+4. DC Event Viewer (Directory Service) で 2889 / 3039 / LDAP 署名関連イベント確認
+5. GPO: 新ポリシー `ドメイン コントローラー: LDAP サーバの署名要件の適用` の状態 (無効=0 のみ平文バインド許容)
+
+### 本アプリケーション固有の調整ポイント
+- カスタム認証バックエンド `users.backends.WindowsLDAPBackend` は複数資格形式 (DOMAIN\\user / user@UPN) を順次試行
+- `strongerAuthRequired` を検出したら StartTLS/LDAPS を有効にして再試行することで無駄な平文再試行を減らせる (将来自動リトライ実装余地)
+- デバッグログで `code`, `desc`, `message` を出力しているため問題判別が高速 (8 → 49 への遷移を監視)
+- 運用投入時は: `LDAP_ALLOW_PLAIN_FALLBACK=False`, `LDAP_TLS_INSECURE=False` に固定する
+
+### セキュリティ留意事項
+- 平文 LDAP を恒久利用しない (資格情報盗聴リスク + 署名必須化で将来再び失敗)
+- `LDAP_TLS_INSECURE=True` は一時調査用。長期放置禁止
+- 監査ログやアプリログにパスワードを出力しない (現在出していない設計)
+
+### 迅速な確認チェックリスト (運用前)
+| 項目 | 確認 | 備考 |
+|------|------|------|
+| FQDN で接続 | ✅/❌ | IP ではなく dc01.example.com |
+| LDAPS or StartTLS 成功 | ✅/❌ | 証明書信頼済み |
+| 平文 fallback 無効 | ✅/❌ | LDAP_ALLOW_PLAIN_FALLBACK=False |
+| 証明書検証有効 | ✅/❌ | LDAP_TLS_INSECURE=False |
+| バインド成功後 code=49/52e 切替確認 | ✅/❌ | 保護確立後は純粋な資格判定 |
+| 新ポリシー状態把握 | ✅/❌ | 必要なら無効化 → 診断後再度有効化 |
+
+参考: ブログ記事 *"Windows Server 2025 の Active Directory では LDAP 署名が既定で必須に"* (要旨のみ反映 / 詳細は原文参照)。
+
 ## アクセス方法
 
 - **カンバンボード**: http://localhost:8000

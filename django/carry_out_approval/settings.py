@@ -212,33 +212,56 @@ LOGGING = {
             'handlers': ['console'],
             'level': 'DEBUG',
         },
+        'users.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
     },
 }
 
-# django-python3-ldap settings (Active Directory用)
-LDAP_AUTH_URL = config('AD_SERVER', default="ldap://your-domain-controller.example.com:389")
-LDAP_AUTH_USE_TLS = config('AD_USE_SSL', default=False, cast=bool)
+"""LDAP/Active Directory 設定
 
-# 検索ベース
-LDAP_AUTH_SEARCH_BASE = config('AD_BASE_DN', default="DC=example,DC=com")
+環境変数命名を以下に統一:
+    LDAP_SERVER_URL        例: ldap://host:389
+    LDAP_USE_SSL           true/false (StartTLS ではなく LDAPS 利用フラグとして再利用)
+    LDAP_SEARCH_BASE       例: DC=example,DC=com
+    LDAP_DOMAIN            例: example (sAMAccountName の UPN/NTLM 用)
+    LDAP_BIND_DN           サービスバインド用DN
+    LDAP_BIND_PASSWORD     そのパスワード
 
-# ユーザーオブジェクトクラス（Active Directory用）
+django_python3_ldap の従来変数 (LDAP_AUTH_*) を内部でエイリアスとして残し、
+既存コードやライブラリ互換を確保する。
+"""
+
+# Canonical unified env-based settings
+LDAP_SERVER_URL = config('LDAP_SERVER_URL', default="ldap://your-domain-controller.example.com:389")
+LDAP_USE_SSL = config('LDAP_USE_SSL', default=False, cast=bool)
+LDAP_SEARCH_BASE = config('LDAP_SEARCH_BASE', default="DC=example,DC=com")
+LDAP_DOMAIN = config('LDAP_DOMAIN', default="example")
+LDAP_BIND_DN = config('LDAP_BIND_DN', default="CN=Administrator,CN=Users,DC=example,DC=com")
+LDAP_BIND_PASSWORD = config('LDAP_BIND_PASSWORD', default="your_admin_password")
+LDAP_UPN_SUFFIX = config('LDAP_UPN_SUFFIX', default=None)
+LDAP_FORCE_STARTTLS = config('LDAP_FORCE_STARTTLS', default=False, cast=bool)
+LDAP_ALLOW_PLAIN_FALLBACK = config('LDAP_ALLOW_PLAIN_FALLBACK', default=False, cast=bool)
+LDAP_TLS_INSECURE = config('LDAP_TLS_INSECURE', default=False, cast=bool)  # True: 証明書検証緩和 (開発用途のみ)
+
+# Backward compatibility / django_python3_ldap expected names
+LDAP_AUTH_URL = LDAP_SERVER_URL
+LDAP_AUTH_USE_TLS = LDAP_USE_SSL
+LDAP_AUTH_SEARCH_BASE = LDAP_SEARCH_BASE
+LDAP_AUTH_CONNECTION_USERNAME = LDAP_BIND_DN
+LDAP_AUTH_CONNECTION_PASSWORD = LDAP_BIND_PASSWORD
+
+# 以下は django_python3_ldap 用 (必要なら保持)
 LDAP_AUTH_OBJECT_CLASS = "user"
-
-# ユーザーフィールドマッピング（Active Directory用）
 LDAP_AUTH_USER_FIELDS = {
     "username": "sAMAccountName",
-    "first_name": "givenName", 
+    "first_name": "givenName",
     "last_name": "sn",
     "email": "mail",
 }
-
-# ユーザー検索フィールド
 LDAP_AUTH_USER_LOOKUP_FIELDS = ("username",)
-
-# 接続設定 - Active Directory管理者認証
-LDAP_AUTH_CONNECTION_USERNAME = config('AD_ADMIN_DN', default="CN=Administrator,CN=Users,DC=example,DC=com")
-LDAP_AUTH_CONNECTION_PASSWORD = config('AD_ADMIN_PASSWORD', default="your_admin_password")
 
 # ユーザー同期設定
 LDAP_AUTH_SYNC_USER_RELATIONS = True

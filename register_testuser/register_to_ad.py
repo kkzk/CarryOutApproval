@@ -7,13 +7,13 @@ ldap3ライブラリを使用してLDAP接続を行います。
 import json
 import os
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 try:
     from dotenv import load_dotenv
 except ImportError:
-    # dotenvがインストールされていない場合は無視
-    def load_dotenv():
-        pass
+    # dotenvがインストールされていない場合は無視 (互換シグネチャで bool を返す)
+    def load_dotenv(*args, **kwargs) -> bool:  # type: ignore
+        return False
 
 from ldap3 import Server, Connection, ALL, NTLM, SUBTREE, MODIFY_REPLACE, Tls
 from ldap3.core.exceptions import LDAPException, LDAPBindError, LDAPEntryAlreadyExistsResult
@@ -37,71 +37,172 @@ class ActiveDirectoryManager:
         """初期化"""
         # 環境変数を読み込み
         load_dotenv()
-        
-        self.server_uri = os.getenv('AD_SERVER')
+        self.server_uri = os.getenv('AD_SERVER')  # may be None until validation
         self.admin_dn = os.getenv('AD_ADMIN_DN')
         self.admin_password = os.getenv('AD_ADMIN_PASSWORD')
         self.base_dn = os.getenv('AD_BASE_DN')
         self.users_ou = os.getenv('AD_USERS_OU', f'CN=Users,{self.base_dn or ""}')
         self.default_password = os.getenv('AD_DEFAULT_PASSWORD', 'TempPassword123!')
         self.use_ssl = os.getenv('AD_USE_SSL', 'false').lower() == 'true'
-        
+        self.use_starttls = os.getenv('AD_STARTTLS', 'false').lower() == 'true'
+        # 任意ポート指定 (URI でなく数値指定を優先)
+        self.port: Optional[int] = None
+        try:
+            ad_port_env = os.getenv('AD_PORT')
+            if ad_port_env:
+                self.port = int(ad_port_env)
+        except ValueError:
+            logger.warning("AD_PORT が整数に変換できません。無視します。")
+        # TLS 検証制御
+        self.strict_cert = os.getenv('AD_STRICT_CERT', 'false').lower() == 'true'
+
         # ログレベル設定
         log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
         logger.setLevel(getattr(logging, log_level))
-        
+
         # 必須パラメータのチェック
         if not all([self.server_uri, self.admin_dn, self.admin_password, self.base_dn]):
             raise ValueError("必須の環境変数が設定されていません。.envファイルを確認してください。")
-        
+
+        # 以降は None ではないとみなす (typing のため cast)
+        self.server_uri = cast(str, self.server_uri)
+        self.admin_dn = cast(str, self.admin_dn)
+        self.admin_password = cast(str, self.admin_password)
+        self.base_dn = cast(str, self.base_dn)
+
         self.connection: Optional[Connection] = None
         
     def connect(self) -> bool:
-        """ActiveDirectoryに接続"""
+        """ActiveDirectoryに接続 (strongerAuthRequired に対するフォールバック含む)"""
         if not self.server_uri or not self.admin_dn or not self.admin_password:
             logger.error("接続に必要な情報が不足しています")
             return False
-            
-        try:
-            # サーバー設定（SSL使用時は証明書検証を調整）
-            if self.use_ssl:
-                import ssl
-                tls = Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2)
-                server = Server(self.server_uri, get_info=ALL, use_ssl=self.use_ssl, tls=tls)
+        import ssl, re
+
+        # server_uri 解析 (ldap[s]://host:port 形式への対応)
+        uri = self.server_uri.strip()
+        scheme_host = re.match(r'^(ldap[s]?://)?([^:/]+)(?::(\d+))?$', uri)
+        if scheme_host:
+            _scheme, host, uri_port = scheme_host.groups()
+        else:
+            # 想定外フォーマットはそのまま Server に渡す
+            host, uri_port = uri, None
+        # ポート決定優先順位: 環境変数 AD_PORT > URIポート > デフォルト636/389
+        port = self.port or (int(uri_port) if uri_port else (636 if self.use_ssl else 389))
+        use_ssl = self.use_ssl
+
+        # TLS 設定準備
+        if use_ssl or self.use_starttls:
+            if self.strict_cert:
+                validate_mode = ssl.CERT_REQUIRED
             else:
-                server = Server(self.server_uri, get_info=ALL, use_ssl=self.use_ssl)
-            
-            # 接続設定（NTLM認証またはSimple認証）
-            if 'CN=' in self.admin_dn.upper():
-                # Simple認証
-                self.connection = Connection(
-                    server, 
-                    user=self.admin_dn, 
-                    password=self.admin_password,
-                    auto_bind=True
-                )
+                validate_mode = ssl.CERT_NONE
+            try:
+                tls = Tls(validate=validate_mode, version=ssl.PROTOCOL_TLS_CLIENT)
+            except AttributeError:
+                tls = Tls(validate=validate_mode, version=ssl.PROTOCOL_TLSv1_2)
+        else:
+            tls = None
+
+        def build_server(_use_ssl: bool) -> Server:
+            target_host = host if host else self.server_uri
+            return Server(str(target_host), port=port, use_ssl=_use_ssl, get_info=ALL, tls=tls)
+
+        def choose_auth():
+            admin_dn_local = self.admin_dn or ''
+            if admin_dn_local.upper().startswith('CN='):
+                return None  # SIMPLE
+            if '\\' in admin_dn_local:
+                return NTLM
+            if '@' in admin_dn_local:
+                return None
+            return None
+
+        auth_method = choose_auth()
+
+        def try_bind(server_obj: Server, starttls: bool = False) -> Connection | None:
+            conn = Connection(
+                server_obj,
+                user=self.admin_dn,
+                password=self.admin_password,
+                authentication=auth_method if auth_method else 'SIMPLE',
+                auto_bind=False,
+                raise_exceptions=False
+            )
+            if starttls:
+                logger.debug("StartTLS を開始します ...")
+                try:
+                    if not conn.start_tls():
+                        logger.error(f"StartTLS 失敗: last_error={conn.last_error} result={conn.result}")
+                        # 失敗しても last_error 参照できるよう conn を返す
+                        return conn
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"StartTLS 例外発生: {e} last_error={conn.last_error} result={conn.result}")
+                    return conn
+            if not conn.bind():
+                logger.error(f"Bind 失敗: last_error={conn.last_error} result={conn.result}")
+                return conn
+            return conn
+
+        # 1. LDAPS
+        if use_ssl:
+            server = build_server(True)
+            logger.debug(f"LDAPS 接続試行 host={host} port={port} strict_cert={self.strict_cert}")
+            conn = try_bind(server)
+            if conn and conn.bound:
+                self.connection = conn
+                logger.info(f"ActiveDirectory(LDAPS) に接続しました: {host}:{port}")
+                return True
+            if conn:
+                logger.warning(f"LDAPS bind 失敗 result={conn.result} last_error={conn.last_error}")
             else:
-                # NTLM認証
-                self.connection = Connection(
-                    server, 
-                    user=self.admin_dn, 
-                    password=self.admin_password,
-                    authentication=NTLM,
-                    auto_bind=True
-                )
-            
-            logger.info(f"ActiveDirectoryに接続しました: {self.server_uri}")
+                logger.warning("LDAPS での Connection 生成に失敗。")
+            return False
+
+        # 2. 明示 StartTLS 指定
+        if self.use_starttls:
+            server = build_server(False)
+            logger.debug(f"LDAP+StartTLS 接続試行 host={host} port={port}")
+            conn = try_bind(server, starttls=True)
+            if conn and conn.bound:
+                self.connection = conn
+                logger.info(f"ActiveDirectory(LDAP+StartTLS) に接続しました: {host}:{port}")
+                return True
+            if conn:
+                logger.warning(f"LDAP+StartTLS bind 失敗 result={conn.result} last_error={conn.last_error}")
+            else:
+                logger.warning("LDAP+StartTLS での Connection 生成に失敗。")
+            return False
+
+        # 3. 平文 bind → strongerAuthRequired なら StartTLS 自動
+        server = build_server(False)
+        logger.debug(f"平文 LDAP bind 試行 host={host} port={port}")
+        conn = try_bind(server)
+        if conn and conn.bound:
+            self.connection = conn
+            logger.info(f"ActiveDirectory(LDAP) に接続しました: {host}:{port}")
             return True
-            
-        except LDAPBindError as e:
-            logger.error(f"認証に失敗しました: {e}")
-            return False
-        except LDAPException as e:
-            logger.error(f"LDAP接続エラー: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"予期しないエラー: {e}")
-            return False
+
+        # strongerAuthRequired 判定 (conn が存在し、未バインドの場合)
+        if conn:
+            last_error = getattr(conn, 'last_error', '')
+            result_dict = getattr(conn, 'result', {})
+            if ('strongerAuthRequired' in str(last_error)) or (isinstance(result_dict, dict) and result_dict.get('description') == 'strongerAuthRequired'):
+                logger.warning("strongerAuthRequired 検出。自動 StartTLS フォールバックを試行します。AD_STARTTLS を .env に追加することも可能です。")
+                conn2 = try_bind(server, starttls=True)
+                if conn2 and conn2.bound:
+                    self.connection = conn2
+                    logger.info(f"ActiveDirectory(LDAP->StartTLS) に接続しました: {host}:{port}")
+                    return True
+                if conn2:
+                    logger.error(f"StartTLS フォールバック失敗 result={conn2.result} last_error={conn2.last_error}")
+                else:
+                    logger.error("StartTLS フォールバックで Connection 生成失敗。")
+            else:
+                logger.error(f"平文 LDAP bind 失敗 description={result_dict.get('description')} last_error={last_error}")
+        else:
+            logger.error("平文 LDAP bind 失敗し、Connection が None のため詳細なし。")
+        return False
     
     def disconnect(self):
         """接続を閉じる"""

@@ -21,6 +21,8 @@ dependencies = [
     "ldap3>=2.9.1",
     "django-python3-ldap>=0.16.1",
     "dotenv>=0.9.9",
+    # For LDAP NTLM hash (MD4) support used by ldap3.utils.ntlm
+    "pycryptodome>=3.20.0",
 ]
 
 [project.optional-dependencies]
