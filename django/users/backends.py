@@ -301,7 +301,7 @@ class WindowsLDAPBackend(ModelBackend):
         Active DirectoryからOU階層に基づく承認者を取得
         """
         try:
-            from ldap3 import Server, Connection, ALL, NTLM, SUBTREE
+            from ldap3 import Server, Connection, ALL, NTLM, SUBTREE, LEVEL
             
             # LDAP設定を取得 (統一名を優先)
             ldap_server = getattr(settings, 'LDAP_SERVER_URL', getattr(settings, 'LDAP_AUTH_URL', 'ldap://localhost:389'))
@@ -350,14 +350,15 @@ class WindowsLDAPBackend(ModelBackend):
             approvers = []
             
             # 各OU階層のユーザーを検索
-            for ou_dn in ou_hierarchy:
+            for idx, ou_dn in enumerate(ou_hierarchy):
                 search_filter = '(&(objectClass=user)(!(objectClass=computer)))'
                 attributes = ['sAMAccountName', 'cn', 'mail', 'distinguishedName']
-                
+                # idx=0: 自OU → 配下全て (SUBTREE) / idx>=1: 親OU → 直下のみ (LEVEL)
+                scope = SUBTREE if idx == 0 else LEVEL
                 success = conn.search(
                     search_base=ou_dn,
                     search_filter=search_filter,
-                    search_scope=SUBTREE,
+                    search_scope=scope,
                     attributes=attributes
                 )
                 
