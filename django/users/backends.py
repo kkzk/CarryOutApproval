@@ -28,7 +28,7 @@ from django.contrib import messages
 from django.conf import settings
 import logging
 from urllib.parse import urlparse
-from typing import List, Tuple, Optional, Iterable
+from typing import List, Tuple, Optional, Iterable, Any, cast
 from dataclasses import dataclass
 
 # ================== LDAP 定数/Dataclass ==================
@@ -288,7 +288,36 @@ class WindowsLDAPBackend(ModelBackend):
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
-        """与えられた username から順序付きのバインド候補 (label, user, auth_kind) を生成."""
+        """与えられた `username` と設定から bind 候補を優先順位付きで生成する。
+
+        生成ルール (重複排除 / 上から順に試行):
+          1. 入力に `\\` が含まれる → そのまま: "NTLM(as-is)" (auth_kind='NTLM')
+          2. 入力に `@` が含まれる  → そのまま: "UPN(as-is)" (auth_kind=None ⇒ SIMPLE)
+          3. `\\` も `@` も無く cfg.domain があれば "NTLM(domain)": `domain\\username`
+          4. (3 の条件後) UPN サフィックスを決定できれば "UPN(constructed)": `username@suffix`
+             (suffix は cfg.upn_suffix 優先 / 無ければ cfg.domain が FQDN(ドット含む) の場合に流用)
+
+        auth_kind:
+          'NTLM' → ldap3 の NTLM 認証を使用 / None → SIMPLE (UPN) 認証。
+
+        例:
+          - 入力: "corp\\alice" domain=EXAMPLE upn_suffix=None
+              → [ ("NTLM(as-is)", "corp\\alice", 'NTLM') ]  (すでに \\ を含むため他生成無し)
+          - 入力: "alice@example.com" domain=EXAMPLE
+              → [ ("UPN(as-is)", "alice@example.com", None) ]
+          - 入力: "alice" domain=EXAMPLE upn_suffix=None
+              → [ ("NTLM(domain)", "EXAMPLE\\alice", 'NTLM') ]  (domain にドット無く UPN 構築不可)
+          - 入力: "alice" domain=example upn_suffix=example.local
+              → [ ("NTLM(domain)", "example\\alice", 'NTLM'), 
+                  ("UPN(constructed)", "alice@example.local", None) ]
+          - 入力: "alice" domain=corp.example.com upn_suffix=None
+              → [ ("NTLM(domain)", "corp.example.com\\alice", 'NTLM'),
+                  ("UPN(constructed)", "alice@corp.example.com", None) ]
+          - 入力: "alice" domain="" upn_suffix=example.com
+              → [ ("UPN(constructed)", "alice@example.com", None) ]
+
+        戻り値: 各要素 (label:説明, user:bindユーザー文字列, auth_kind:'NTLM' or None)
+        """
         original = username
         yielded = set()
         def push(item):
@@ -437,7 +466,10 @@ class WindowsLDAPBackend(ModelBackend):
             if ' ' in display_name:
                 first_name, last_name = display_name.split(' ', 1)
             email_attr = str(getattr(entry, 'mail', '') or f"{username}@{(upn_suffix or domain or 'local')}")
-            user = UserModel.objects.create_user(
+            # Django の UserManager (BaseUserManager) には create_user が定義されているが
+            # 型チェッカがカスタムユーザ経由で解決できず警告を出すケースがあるため明示的に cast。
+            manager = cast(Any, UserModel.objects)
+            user = manager.create_user(  # type: ignore[attr-defined]
                 username=username,
                 email=email_attr,
                 first_name=first_name,
