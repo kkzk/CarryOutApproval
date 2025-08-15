@@ -205,15 +205,35 @@ AUTHENTICATION_BACKENDS = [
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+        'detailed': {
+            'format': '%(levelname)s %(asctime)s %(name)s %(message)s',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'detailed',
         },
     },
     'loggers': {
         'django_python3_ldap': {
             'handlers': ['console'],
             'level': 'DEBUG',
+        },
+        'django.security.authentication': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
         },
         'users.backends': {
             'handlers': ['console'],

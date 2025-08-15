@@ -61,16 +61,16 @@
         <div class="login-header">
             <i class="fas fa-shield-alt"></i>
             <h2>持出承認システム</h2>
-            <p class="text-muted">ログインしてください</p>
+            <p class="text-muted">ユーザ名とパスワードを入力してください</p>
         </div>
 
+        {# メッセージ: 上部に端的な結果、下部に対処。初期状態では何も表示しない #}
         {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            {% endfor %}
+            <div id="login-results" class="mb-2">
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} py-2 mb-2 summary-item" data-full="{{ message|escape }}" role="alert"></div>
+                {% endfor %}
+            </div>
         {% endif %}
 
         <form method="post">
@@ -85,21 +85,85 @@
                 <label for="password"><i class="fas fa-lock me-2"></i>パスワード</label>
             </div>
 
-            <div class="d-grid">
+            <div id="login-actions" class="mb-3 d-none">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body py-2 px-3">
+                        <h6 class="text-muted small mb-2"><i class="fa fa-wrench me-1"></i>対処方法</h6>
+                        <ul class="small mb-0 ps-3" id="action-list" style="list-style: disc;"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-grid mt-3">
                 <button type="submit" class="btn btn-primary btn-login">
                     <i class="fas fa-sign-in-alt me-2"></i>ログイン
                 </button>
             </div>
         </form>
 
-        <div class="text-center mt-4">
-            <small class="text-muted">
-                <i class="fas fa-info-circle me-1"></i>
-                システム管理者にお問い合わせください
-            </small>
-        </div>
+    {# 初期表示では管理者への問い合わせメッセージは出さない #}
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // メッセージを「要約(最初の一文)」と「詳細(対処)」に分離して表示
+    document.addEventListener('DOMContentLoaded', function() {
+        const summaryItems = Array.from(document.querySelectorAll('.summary-item'));
+        if (!summaryItems.length) return;
+        const actionList = document.getElementById('action-list');
+        const actionBox = document.getElementById('login-actions');
+
+        // 優先度: ネットワーク/LDAP接続障害 > 資格情報エラー
+        const NETWORK_PATTERNS = [
+            /LDAPサーバー.*到達できません/, /LDAPサーバー.*接続不可/, /ネットワーク.*接続エラー/, /タイムアウト/
+        ];
+        const CREDENTIAL_PATTERNS = [
+            /ユーザー名またはパスワードが正しくありません/
+        ];
+
+        const isNetworkMessage = full => NETWORK_PATTERNS.some(re => re.test(full));
+        const isCredentialMessage = full => CREDENTIAL_PATTERNS.some(re => re.test(full));
+
+        const networkItems = summaryItems.filter(it => isNetworkMessage((it.getAttribute('data-full')||'')));
+
+        if (networkItems.length) {
+            // ネットワーク系がある場合は、それ以外の(特に資格情報)メッセージを削除
+            summaryItems.forEach(it => {
+                if (!networkItems.includes(it)) {
+                    it.remove();
+                }
+            });
+        }
+
+        // 表示対象（フィルタ後）を再取得
+        const remaining = Array.from(document.querySelectorAll('.summary-item'));
+        remaining.forEach(item => {
+            const full = (item.getAttribute('data-full') || '').trim();
+            if (!full) return;
+            const parts = full.split(/。+/).filter(p => p.length);
+            if (!parts.length) return;
+            item.textContent = parts[0] + '。';
+            if (parts.length > 1) {
+                const rest = parts.slice(1).join('。').trim();
+                if (rest) {
+                    const li = document.createElement('li');
+                    li.textContent = rest + '。';
+                    actionList.appendChild(li);
+                }
+            }
+            // ネットワークエラーの場合で対処がまだない時は補助ヒントを追加（冪等）
+            if (isNetworkMessage(full) && ![...actionList.children].some(li => li.dataset.auto === 'net-extra')) {
+                const li = document.createElement('li');
+                li.dataset.auto = 'net-extra';
+                li.textContent = 'LAN/無線/VPN 状態を確認し、問題なければ運用窓口へ連絡してください。';
+                actionList.appendChild(li);
+            }
+        });
+
+        if (actionList.children.length) {
+            actionBox.classList.remove('d-none');
+        }
+    });
+    </script>
 </body>
 </html>

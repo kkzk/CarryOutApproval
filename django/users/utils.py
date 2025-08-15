@@ -2,7 +2,7 @@
 承認者選択のためのユーティリティ関数
 """
 from django.contrib.auth.models import User
-from .backends import WindowsLDAPBackend
+from .ldap_service import LDAPReadOnlyService
 from .models import UserProfile, UserSource
 
 
@@ -12,18 +12,12 @@ def get_approvers_for_user(user):
     同一のOUおよび上位のOUに所属するユーザーを検索
     """
     try:
-        # ユーザーのLDAP DNを取得
-        if hasattr(user, 'profile') and user.profile.ldap_dn:
+        if hasattr(user, 'profile') and getattr(user.profile, 'ldap_dn', None):
             user_dn = user.profile.ldap_dn
         else:
-            # LDAP DNが無い場合は空のリストを返す
             return []
-        
-        # WindowsLDAP認証バックエンドを使用して承認者を取得
-        backend = WindowsLDAPBackend()
-        ldap_approvers = backend.get_approvers_for_user(user_dn)
-        
-        # LDAP情報をDjangoユーザーとマッチング
+        ldap_service = LDAPReadOnlyService()
+        ldap_approvers = ldap_service.get_approvers_for_dn(user_dn)
         django_approvers = []
         for ldap_user in ldap_approvers:
             try:
@@ -36,7 +30,6 @@ def get_approvers_for_user(user):
                     'ou': ldap_user['ou']
                 })
             except User.DoesNotExist:
-                # Djangoにユーザーが存在しない場合は、とりあえず情報だけ含める
                 django_approvers.append({
                     'user': None,
                     'username': ldap_user['username'],
@@ -44,12 +37,9 @@ def get_approvers_for_user(user):
                     'email': ldap_user['email'],
                     'ou': ldap_user['ou']
                 })
-        
         return django_approvers
-        
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error getting approvers: {e}")
-        # エラー時はモックバックエンドを使用
         return []
 
 
@@ -87,11 +77,10 @@ def test_ldap_connection():
     LDAP接続のテスト
     """
     try:
-        backend = WindowsLDAPBackend()
-        # テスト用の認証を試行
-        result = backend._authenticate_ldap3('testuser', 'testpass')
-        return result is not None
-    except Exception as e:
+        svc = LDAPReadOnlyService()
+        svc.get_approvers_for_dn('CN=dummy,OU=Dummy,DC=example,DC=com')
+        return True
+    except Exception as e:  # noqa: BLE001
         print(f"LDAP connection test failed: {e}")
         return False
 
