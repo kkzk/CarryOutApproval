@@ -6,23 +6,32 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """ユーザーシリアライザー"""
+    """ユーザー + プロファイル フィールド (読み取り専用)"""
     full_name = serializers.SerializerMethodField()
-    
+    department_code = serializers.CharField(source='profile.department_code', read_only=True)
+    department_name = serializers.CharField(source='profile.department_name', read_only=True)
+    title = serializers.CharField(source='profile.title', read_only=True)
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'first_name', 'last_name', 'full_name', 'department_code')
-    
+        fields = (
+            'id', 'username', 'first_name', 'last_name', 'full_name',
+            'department_code', 'department_name', 'title'
+        )
+
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
-    """申請シリアライザー（読み取り用）"""
-    applicant = UserSerializer(read_only=True)
-    approver = UserSerializer(read_only=True)
+    """申請シリアライザー（読み取り用）
+    applicant / approver は現在 CharField (ユーザ名) なので、互換性確保のため
+    以前のネスト構造に近い dict を返す SerializerMethodField にする。
+    """
+    applicant = serializers.SerializerMethodField()
+    approver = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
+
     class Meta:
         model = Application
         fields = [
@@ -32,31 +41,48 @@ class ApplicationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ('created_at', 'updated_at', 'approved_at')
 
+    def _user_dict(self, username):
+        if not username:
+            return None
+        try:
+            user = User.objects.get(username=username)
+            serialized = UserSerializer(user).data
+            return serialized
+        except User.DoesNotExist:
+            # 最低限の情報だけ返す
+            return {
+                'id': None,
+                'username': username,
+                'first_name': '',
+                'last_name': '',
+                'full_name': username,
+                'department_code': '',
+                'department_name': '',
+                'title': ''
+            }
+
+    def get_applicant(self, obj):
+        return self._user_dict(obj.applicant)
+
+    def get_approver(self, obj):
+        return self._user_dict(obj.approver)
+
 
 class ApplicationCreateSerializer(serializers.ModelSerializer):
-    """申請作成シリアライザー"""
-    approver_id = serializers.IntegerField(write_only=True)
-    
+    """申請作成シリアライザー (approver はユーザ名)"""
     class Meta:
         model = Application
         fields = [
-            'approver_id', 'file', 'original_filename', 
+            'approver', 'file', 'original_filename',
             'file_size', 'content_type', 'comment'
         ]
-    
+
     def create(self, validated_data):
-        approver_id = validated_data.pop('approver_id')
-        validated_data['approver_id'] = approver_id
-        
-        # ファイルから情報を自動取得
+        # ファイル情報自動補完
         file = validated_data['file']
-        if not validated_data.get('original_filename'):
-            validated_data['original_filename'] = file.name
-        if not validated_data.get('file_size'):
-            validated_data['file_size'] = file.size
-        if not validated_data.get('content_type'):
-            validated_data['content_type'] = getattr(file, 'content_type', 'application/octet-stream')
-        
+        validated_data.setdefault('original_filename', file.name)
+        validated_data.setdefault('file_size', file.size)
+        validated_data.setdefault('content_type', getattr(file, 'content_type', 'application/octet-stream'))
         return super().create(validated_data)
 
 

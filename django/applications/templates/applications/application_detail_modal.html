@@ -46,11 +46,11 @@
             <table class="table table-sm">
                 <tr>
                     <th width="100">申請者:</th>
-                    <td>{{ application.applicant.get_full_name|default:application.applicant.username }}</td>
+                    <td>{{ application.applicant }}</td>
                 </tr>
                 <tr>
                     <th>承認者:</th>
-                    <td>{{ application.approver.get_full_name|default:application.approver.username }}</td>
+                    <td>{{ application.approver }}</td>
                 </tr>
                 <tr>
                     <th>申請日時:</th>

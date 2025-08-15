@@ -13,6 +13,46 @@ from django.views import View
 from django.utils import timezone
 from .serializers import UserSerializer
 from .session_manager import SessionManager
+from users.utils import get_approvers_for_user
+from django.views.decorators.http import require_POST
+from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
+
+
+@login_required
+def resync_and_fetch_approvers(request):
+    """現在ログインユーザのLDAP情報を再同期し、承認者候補をJSONで返す"""
+    import logging
+    logger = logging.getLogger('users.backends')
+    if request.method != 'GET':
+        return JsonResponse({'ok': False, 'error': 'method_not_allowed'}, status=405)
+
+    user = request.user
+    logger.debug("[resync] start user=%s", user.username)
+    try:
+        profile = getattr(user, 'profile', None)
+        ldap_dn = getattr(profile, 'ldap_dn', '') if profile else ''
+        if not ldap_dn:
+            logger.warning("[resync] missing ldap_dn user=%s", user.username)
+            return JsonResponse({'ok': False, 'error': 'ldap_dn_not_set', 'candidates': []}, status=400)
+
+        from users.backends import WindowsLDAPBackend
+        backend = WindowsLDAPBackend()
+        approvers_raw = backend.get_approvers_for_user(ldap_dn) or []
+        logger.debug("[resync] fetched count=%d", len(approvers_raw))
+        cleaned = [
+            {
+                'username': a.get('username',''),
+                'display_name': a.get('display_name') or a.get('username',''),
+                'email': a.get('email',''),
+                'ou': a.get('ou','')
+            } for a in approvers_raw if a.get('username') and a.get('username') != user.username
+        ]
+        logger.debug("[resync] cleaned count=%d", len(cleaned))
+        return JsonResponse({'ok': True, 'candidates': cleaned})
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[resync] unexpected error user=%s", user.username)
+        return JsonResponse({'ok': False, 'error': 'exception', 'detail': str(e)}, status=500)
 
 User = get_user_model()
 

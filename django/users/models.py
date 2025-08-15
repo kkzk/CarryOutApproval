@@ -2,12 +2,24 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class UserSource(models.TextChoices):
+    LOCAL = 'local', 'ローカル'
+    LDAP = 'ldap', 'LDAP'
+
+
 class UserProfile(models.Model):
     """ユーザープロファイル - LDAP関連情報を保存"""
     user = models.OneToOneField(
         User, 
         on_delete=models.CASCADE,
         related_name='profile'
+    )
+    source = models.CharField(
+        max_length=20,
+        choices=UserSource.choices,
+        default=UserSource.LOCAL,
+        db_index=True,
+        verbose_name="出所"
     )
     ldap_dn = models.TextField(
         verbose_name="LDAP DN",
@@ -28,6 +40,11 @@ class UserProfile(models.Model):
         max_length=100,
         verbose_name="役職",
         blank=True
+    )
+    last_synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="LDAP最終同期時刻"
     )
     
     class Meta:
