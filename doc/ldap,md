@@ -1,0 +1,8 @@
+
+### 5.2 LDAP 認証 `_authenticate_ldap3`
+
+- 接続設定: `settings.LDAP_SERVER_URL` などを参照
+- ユーザー入力から複数候補（`DOMAIN\user`, `user@upn`, 入力そのまま など）を生成し順次 bind
+- 成功時: `(sAMAccountName=username)` で検索 → entry 属性取得
+- ローカル `User` が無ければ作成 (password は unusable)
+- `UserProfile` を取得/作成し `ldap_dn`, `department_name`, `title`, `last_synced_at` 更新
