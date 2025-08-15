@@ -1,9 +1,7 @@
-"""
-承認者選択のためのユーティリティ関数
-"""
-from django.contrib.auth.models import User
+"""承認者選択等のユーティリティ (カスタムUser対応)"""
+from django.contrib.auth import get_user_model
 from .ldap_service import LDAPReadOnlyService
-from .models import UserProfile, UserSource
+from .models import UserSource
 
 
 def get_approvers_for_user(user):
@@ -12,13 +10,13 @@ def get_approvers_for_user(user):
     同一のOUおよび上位のOUに所属するユーザーを検索
     """
     try:
-        if hasattr(user, 'profile') and getattr(user.profile, 'ldap_dn', None):
-            user_dn = user.profile.ldap_dn
-        else:
+        user_dn = getattr(user, 'ldap_dn', None)
+        if not user_dn:
             return []
         ldap_service = LDAPReadOnlyService()
         ldap_approvers = ldap_service.get_approvers_for_dn(user_dn)
         django_approvers = []
+        User = get_user_model()
         for ldap_user in ldap_approvers:
             try:
                 django_user = User.objects.get(username=ldap_user['username'])
@@ -44,31 +42,25 @@ def get_approvers_for_user(user):
 
 
 def create_user_from_ldap_info(username, display_name, email, ldap_dn):
-    """
-    LDAP情報からDjangoユーザーを作成
-    """
-    from django.contrib.auth.models import User
-    
-    try:
-        user = User.objects.get(username=username)
-    except User.DoesNotExist:
-        # 新規ユーザー作成
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            first_name=display_name.split(' ')[0] if ' ' in display_name else display_name,
-            last_name=display_name.split(' ', 1)[1] if ' ' in display_name else ''
-        )
+    """LDAP情報からローカルユーザーを取得/作成しフィールド更新"""
+    User = get_user_model()
+    user, created = User.objects.get_or_create(username=username, defaults={
+        'email': email,
+        'first_name': (display_name.split(' ')[0] if ' ' in display_name else display_name),
+        'last_name': (display_name.split(' ', 1)[1] if ' ' in display_name else ''),
+    })
+    if created:
         user.set_unusable_password()
-        user.save()
-
-    # プロファイル更新/作成（常に実施）
-    profile, _ = UserProfile.objects.get_or_create(user=user)
-    profile.source = UserSource.LDAP
-    if ldap_dn:
-        profile.ldap_dn = ldap_dn
-    profile.save()
-    
+    # LDAPフィールド更新
+    changed = False
+    if ldap_dn and user.ldap_dn != ldap_dn:
+        user.ldap_dn = ldap_dn
+        changed = True
+    if user.source != UserSource.LDAP:
+        user.source = UserSource.LDAP
+        changed = True
+    if changed:
+        user.save(update_fields=['ldap_dn', 'source'])
     return user
 
 

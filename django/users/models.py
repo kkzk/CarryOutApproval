@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AbstractUser
 
 
 class UserSource(models.TextChoices):
@@ -7,13 +7,11 @@ class UserSource(models.TextChoices):
     LDAP = 'ldap', 'LDAP'
 
 
-class UserProfile(models.Model):
-    """ユーザープロファイル - LDAP関連情報を保存"""
-    user = models.OneToOneField(
-        User, 
-        on_delete=models.CASCADE,
-        related_name='profile'
-    )
+class User(AbstractUser):
+    """カスタムユーザモデル (旧 UserProfile を統合)
+
+    注意: 既存 DB / マイグレーションを破棄して初期化する前提。
+    """
     source = models.CharField(
         max_length=20,
         choices=UserSource.choices,
@@ -46,26 +44,10 @@ class UserProfile(models.Model):
         blank=True,
         verbose_name="LDAP最終同期時刻"
     )
-    
+
     class Meta:
-        verbose_name = "ユーザープロファイル"
-        verbose_name_plural = "ユーザープロファイル"
-    
-    def __str__(self):
-        return f"{self.user.username}のプロファイル"
+        verbose_name = "ユーザー"
+        verbose_name_plural = "ユーザー"
 
-
-# Djangoデフォルトユーザーモデルを拡張するためのシグナル
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
-@receiver(post_save, sender=User)
-def create_or_update_user_profile(sender, instance, created, **kwargs):
-    """ユーザー作成時にプロファイルも作成"""
-    if created:
-        UserProfile.objects.create(user=instance)
-    else:
-        if hasattr(instance, 'profile'):
-            instance.profile.save()
-        else:
-            UserProfile.objects.create(user=instance)
+    def __str__(self):  # noqa: D401 - シンプル表示
+        return self.username

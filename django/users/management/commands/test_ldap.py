@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.conf import settings
 from users.backends import WindowsLDAPBackend
+from users.utils import get_approvers_for_user
 
 
 class Command(BaseCommand):
@@ -39,13 +40,12 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS(f'Authentication successful: {user.username}'))
                     self.stdout.write(f'Email: {user.email}')
                     self.stdout.write(f'Full Name: {user.first_name} {user.last_name}')
-                    profile = getattr(user, 'profile', None)
-                    if profile:
-                        self.stdout.write(f'LDAP DN: {profile.ldap_dn}')
-                        self.stdout.write(f'Department: {profile.department_name}')
-                        self.stdout.write(f'Title: {profile.title}')
+                    if getattr(user, 'ldap_dn', None):
+                        self.stdout.write(f'LDAP DN: {user.ldap_dn}')
+                        self.stdout.write(f'Department: {user.department_name}')
+                        self.stdout.write(f'Title: {user.title}')
                         self.stdout.write('\nTesting approver search...')
-                        approvers = backend.get_approvers_for_user(profile.ldap_dn)
+                        approvers = get_approvers_for_user(user)
                         if approvers:
                             self.stdout.write(f'Found {len(approvers)} potential approvers:')
                             for approver in approvers[:5]:
@@ -53,7 +53,7 @@ class Command(BaseCommand):
                         else:
                             self.stdout.write('No approvers found')
                     else:
-                        self.stdout.write('No user profile found')
+                        self.stdout.write('No LDAP attributes synced yet')
                 else:
                     self.stdout.write(self.style.ERROR('Authentication failed'))
             except Exception as e:

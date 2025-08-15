@@ -1,30 +1,17 @@
 from django.contrib import admin
-from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import UserProfile, UserSource
+from .models import User, UserSource
 
 
-class UserProfileInline(admin.StackedInline):
-    """ユーザープロファイルのインライン編集"""
-    model = UserProfile
-    can_delete = False
-    verbose_name_plural = 'プロファイル'
-
-
+@admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """拡張ユーザー管理"""
-    inlines = (UserProfileInline,)
-
-
-# デフォルトのUserAdminを再登録
-admin.site.unregister(User)
-admin.site.register(User, UserAdmin)
-
-
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    """ユーザープロファイル管理"""
-    list_display = ('user', 'source', 'department_name', 'title', 'ldap_dn')
-    list_filter = ('source', 'department_name', 'title')
-    search_fields = ('user__username', 'user__first_name', 'user__last_name', 'department_name', 'ldap_dn')
-    readonly_fields = ('ldap_dn', 'source')
+    """カスタムユーザ管理"""
+    # 既存 fieldsets はタプル。拡張分を足した新しいタプルを生成。
+    fieldsets = tuple(list(BaseUserAdmin.fieldsets) + [
+        ('LDAP / 拡張属性', {
+            'fields': ('source', 'ldap_dn', 'department_code', 'department_name', 'title', 'last_synced_at')
+        })
+    ])
+    list_display = ('username', 'email', 'first_name', 'last_name', 'source', 'department_name', 'title', 'is_staff')
+    list_filter = tuple(list(BaseUserAdmin.list_filter) + ['source', 'department_name', 'title'])
+    readonly_fields = ('ldap_dn', 'last_synced_at')

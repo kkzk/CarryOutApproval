@@ -448,33 +448,32 @@ class WindowsLDAPBackend(ModelBackend):
             return user
 
     def _sync_profile_from_ldap(self, user, entry):
-        """UserProfile があれば LDAP 属性差分を同期 (存在しなくても失敗しない)."""
+        """カスタムUserへ LDAP 属性差分を同期 (失敗しても例外抑止)."""
         try:
-            from .models import UserProfile, UserSource  # 遅延 import
-            profile, _ = UserProfile.objects.get_or_create(user=user)
-            # LDAP経由でログインできた時点で出所をLDAPに設定
-            if profile.source != UserSource.LDAP:
-                profile.source = UserSource.LDAP
+            from .models import UserSource  # 遅延 import
             from django.utils import timezone
             new_dn = str(getattr(entry, 'distinguishedName', '') or '')
             new_dept = str(getattr(entry, 'department', '') or '')
             new_title = str(getattr(entry, 'title', '') or '')
             changed = []
-            if profile.ldap_dn != new_dn:
+            if user.source != UserSource.LDAP:
+                user.source = UserSource.LDAP
+                changed.append('source')
+            if user.ldap_dn != new_dn:
+                user.ldap_dn = new_dn
                 changed.append('ldap_dn')
-                profile.ldap_dn = new_dn
-            if profile.department_name != new_dept:
+            if user.department_name != new_dept:
+                user.department_name = new_dept
                 changed.append('department_name')
-                profile.department_name = new_dept
-            if profile.title != new_title:
+            if user.title != new_title:
+                user.title = new_title
                 changed.append('title')
-                profile.title = new_title
-            profile.last_synced_at = timezone.now()
-            profile.save()
+            user.last_synced_at = timezone.now()
             if changed:
-                logger.info("LDAP profile fields changed | user=%s changed=%s", user.username, ','.join(changed))
+                user.save(update_fields=list(set(changed + ['last_synced_at'])))
+                logger.info("LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed))
         except Exception:  # noqa: BLE001
-            logger.debug("UserProfile 更新をスキップ (存在しない/エラー)")
+            logger.debug("User LDAPフィールド同期失敗をスキップ")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
         """全候補失敗時に試行概要と各試行詳細を詳細ログ出力."""

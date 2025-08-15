@@ -33,7 +33,9 @@ dev = [
     "pytest-django>=4.5.0",
     "black>=22.0.0",
     "flake8>=4.0.0",
-    "isort>=5.10.0"
+    "isort>=5.10.0",
+    "django-stubs>=5.0.0",
+    "mypy>=1.10.0"
 ]
 
 [build-system]
@@ -75,6 +77,8 @@ dev-dependencies = [
     "black>=22.0.0",
     "flake8>=4.0.0",
     "isort>=5.10.0",
+    "django-stubs>=5.0.0",
+    "mypy>=1.10.0",
 ]
 
 # Django固有の設定

@@ -168,6 +168,9 @@ APPROVED_DIR = BASE_DIR / 'storage' / 'approved'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# カスタムユーザモデル
+AUTH_USER_MODEL = 'users.User'
+
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
