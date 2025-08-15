@@ -4,21 +4,58 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 import logging
 from urllib.parse import urlparse
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Iterable
+from dataclasses import dataclass
+
+# ================== LDAP 定数/Dataclass ==================
+LDAP_ATTRS_USER = [
+    'cn', 'mail', 'distinguishedName', 'department', 'title',
+    'memberOf', 'givenName', 'sn', 'displayName'
+]
+LDAP_SEARCH_FILTER_USER = '(sAMAccountName={username})'
+
+
+@dataclass(frozen=True)
+class LDAPRuntimeConfig:
+    """LDAP 実行時設定 (ユーザ資格情報認証で使用)。"""
+    server_url: str
+    search_base: str
+    domain: str
+    upn_suffix: Optional[str]
+    use_ssl: bool
+    force_starttls: bool
+    allow_plain: bool
+
+    @staticmethod
+    def load() -> 'LDAPRuntimeConfig':
+        return LDAPRuntimeConfig(
+            server_url=getattr(settings, 'LDAP_SERVER_URL', getattr(settings, 'LDAP_AUTH_URL', 'ldap://localhost:389')),
+            search_base=getattr(settings, 'LDAP_SEARCH_BASE', getattr(settings, 'LDAP_AUTH_SEARCH_BASE', 'DC=example,DC=com')),
+            domain=getattr(settings, 'LDAP_DOMAIN', ''),
+            upn_suffix=getattr(settings, 'LDAP_UPN_SUFFIX', None),
+            use_ssl=bool(getattr(settings, 'LDAP_USE_SSL', False)),
+            force_starttls=bool(getattr(settings, 'LDAP_FORCE_STARTTLS', False)),
+            allow_plain=bool(getattr(settings, 'LDAP_ALLOW_PLAIN_FALLBACK', False)),
+        )
+
+
 
 logger = logging.getLogger(__name__)
 
 
 class WindowsLDAPBackend(ModelBackend):
+    """Windows対応 LDAP 認証バックエンド (ldap3)。
+
+    ポリシー:
+      - 管理用固定サービスアカウントを持たず、利用者資格情報で直接バインド
+      - LDAPS / StartTLS を優先 (設定で明示無い場合は StartTLS を強制)
+      - バインド候補生成順: as-is(入力形式) > NTLM(domain\\user) > UPN(constructed)
     """
-    Windows対応のLDAP認証バックエンド（ldap3使用）
-    """
-    
+
     def authenticate(self, request, username=None, password=None, **kwargs):
+        """Django 標準 authenticate 入口: まずローカルパスワードを試し未命中なら LDAP."""
         if not username or not password:
             return None
-            
-        # まずDjangoデフォルトのユーザーを確認
         UserModel = get_user_model()
         try:
             user = UserModel.objects.get(username=username)
@@ -26,117 +63,159 @@ class WindowsLDAPBackend(ModelBackend):
                 return user
         except UserModel.DoesNotExist:
             pass
-        
-        # Djangoにユーザーが存在しない場合、LDAP認証を実行
         return self._authenticate_ldap3(username, password)
-    
-    def _authenticate_ldap3(self, username, password):
-        """利用者資格情報のみで Active Directory に直接バインドして認証。
 
-        ポリシー: 管理用サービスアカウントを保持しない。ユーザ入力の ID/パスワードで安全チャネル( LDAPS / StartTLS ) を優先的に使用。
-        試行順序:
-          1. ユーザが \\ もしくは @ を含めて入力した場合はその形式を最優先
-          2. NTLM (DOMAIN\\username)
-          3. UPN (username@upn_suffix)
-        いずれも失敗したら認証失敗。
+    def _authenticate_ldap3(self, username, password):
+        """利用者資格情報で AD (LDAP) に直接バインドして認証するメインフロー。
+
+        流れ (成功した時点で即 return):
+          1. 設定ロード & Server/TLS 初期化
+          2. ユーザ名表記の揺れを吸収する複数のバインド候補生成
+          3. 各候補で順次: Connection 準備 → (必要なら StartTLS) → bind → ユーザ検索
+          4. 最初に成功したエントリでローカルユーザ作成/取得 & プロファイル同期し返却
+          5. 全候補失敗時は詳細ログを残して None
+
+        例外:
+          - ldap3 ImportError は即ログ + None
+          - その他想定外例外もログ後 None
         """
         try:
-            from ldap3 import Server, Connection, ALL, NTLM, SUBTREE, Tls, SIMPLE
-            import ssl
-
-            # 1) 設定と基礎情報取得 (インライン化：_get_ldap_runtime_config 廃止)
-            ldap_server_url = getattr(settings, 'LDAP_SERVER_URL', getattr(settings, 'LDAP_AUTH_URL', 'ldap://localhost:389'))
-            search_base = getattr(settings, 'LDAP_SEARCH_BASE', getattr(settings, 'LDAP_AUTH_SEARCH_BASE', 'DC=example,DC=com'))
-            domain = getattr(settings, 'LDAP_DOMAIN', '')
-            upn_suffix = getattr(settings, 'LDAP_UPN_SUFFIX', None)
-            use_ssl = bool(getattr(settings, 'LDAP_USE_SSL', False))
-            force_starttls = bool(getattr(settings, 'LDAP_FORCE_STARTTLS', False))
-            allow_plain = bool(getattr(settings, 'LDAP_ALLOW_PLAIN_FALLBACK', False))
-
-            # 2) Server 準備
-            host, port = self._parse_host_port(ldap_server_url, use_ssl)
-            tls = self._build_tls(use_ssl, force_starttls, ssl)
-            server = Server(host, port=port, use_ssl=use_ssl, get_info=ALL, tls=tls)
+            # 1) 設定ロード (毎回: 動的に設定変更される可能性を考慮 / キャッシュは不要な軽コスト)
+            cfg = LDAPRuntimeConfig.load()
+            # 2) ldap3 のインポートを遅延させることで: (a) 起動時コスト削減 (b) モジュール未導入時に他機能を壊さない
+            from ldap3 import Server, ALL  # 遅延 import
+            import ssl  # TLS 設定用 (証明書検証モード選択に利用)
+            # --- 接続パラメータ準備 ---
+            # URL から (host, port) を抽出
+            host, port = self._parse_host_port(cfg.server_url, cfg.use_ssl)
+            # LDAPS or StartTLS を使う場合のみ TLS オブジェクト生成
+            tls = self._build_tls(cfg.use_ssl, cfg.force_starttls, ssl)
+            # get_info=ALL: スキーマ等のメタ情報取得 (軽量)
+            server = Server(host, port=port, use_ssl=cfg.use_ssl, get_info=ALL, tls=tls)
+            # IP 指定かどうか (証明書 CN 不一致ログ判断用)
             host_is_ip = self._is_ipv4_like(host)
-
-            # 3) 認証候補生成
-            candidates = self._build_candidate_credentials(username, domain, upn_suffix)
+            # StartTLS 強制条件: 明示 force_starttls OR (暗号化手段が無 & allow_plain=False)
+            force_starttls = cfg.force_starttls or (not cfg.use_ssl and not cfg.allow_plain)
+            # 失敗試行の (label, last_error, result) 蓄積
+            last_errors: List[Tuple[str, str, object]] = []
+            # 認証候補 credential 群 (順序維持: 最初に成功したものを採用)
+            candidates = list(self._generate_bind_candidates(username, cfg))
             if not candidates:
-                self._log_no_candidates(username, domain, upn_suffix, use_ssl, force_starttls, allow_plain)
+                # 早期終了: 生成条件に合致する資格文字列が一つも無い (入力形式 + 設定不足)
+                self._log_no_candidates(username, cfg.domain, cfg.upn_suffix, cfg.use_ssl, force_starttls, cfg.allow_plain)
                 return None
-            logger.debug(
-                "LDAP bind candidates | user=%s domain=%s candidates=%s",
-                username, domain or '', [(lbl, usr, auth) for lbl, usr, auth in candidates]
-            )
-
-            # 4) セキュアチャネル (StartTLS 強制条件調整)
-            if not use_ssl and not force_starttls and not allow_plain:
-                force_starttls = True
-
-            last_errors = []  # (label, last_error, result)
-
-            # 5) 試行ループ
-            for label, bind_user, auth_label in candidates:
-                try:
-                    auth_method = NTLM if auth_label == 'NTLM' else SIMPLE
-                    conn = Connection(
-                        server,
-                        user=bind_user,
-                        password=password,
-                        authentication=auth_method,
-                        auto_bind=False,
-                        raise_exceptions=False,
-                    )
-                    # StartTLS
-                    if not use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
-                        continue
-
-                    # Bind
-                    if not self._bind_connection(conn, host, host_is_ip, use_ssl, force_starttls, label, auth_method, last_errors):
-                        continue
-
-                    # Search user entry
-                    entry = self._search_user_entry(conn, username, host, label, search_base, last_errors)
-                    if not entry:
-                        conn.unbind()
-                        return None  # 元実装と同じ早期終了（検索失敗時）
-
-                    # Django ユーザ作成/取得 + Profile 更新
-                    user = self._get_or_create_local_user(username, entry, upn_suffix, domain)
-                    self._update_user_profile(user, entry)
-
-                    conn.unbind()
-                    logger.info(
-                        "LDAP auth success | user=%s attempt=%s bind_user=%s host=%s",
-                        username, label, bind_user, host,
-                        extra={'ldap_params': {'attempt': label, 'bind_user': bind_user}}
-                    )
+            logger.debug("LDAP bind candidates | user=%s candidates=%s", username, [(c[0], c[1]) for c in candidates])
+            for label, bind_user, auth_kind in candidates:
+                user = self._attempt_single_candidate(
+                    username=username,
+                    password=password,
+                    server=server,
+                    host=host,
+                    host_is_ip=host_is_ip,
+                    cfg=cfg,
+                    force_starttls=force_starttls,
+                    label=label,
+                    bind_user=bind_user,
+                    auth_kind=auth_kind,
+                    last_errors=last_errors,
+                )
+                # 特殊ケース: エントリ無し (bind 成功だが検索 0 件) → 全体として None を確定
+                if user is False:  # sentinel (検索なし早期終了)
+                    return None
+                # User インスタンスが返れば成功
+                if user is not None:
                     return user
-                except Exception as e:  # noqa: BLE001
-                    logger.debug(
-                        "LDAP attempt exception | user=%s label=%s error=%s domain=%s", username, label, e, domain or ''
-                    )
-                    last_errors.append((label, str(e), {'description': 'exception'}))
-                    continue
-
-            # 6) 全失敗ログ
-            self._log_all_attempt_fail(username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls)
+            # 全候補失敗: 蓄積した失敗情報を DEBUG 出力し None
+            self._log_all_attempt_fail(username, host, host_is_ip, cfg.domain, last_errors, cfg.use_ssl, force_starttls)
             return None
-        except ImportError:
+        except ImportError:  # noqa: BLE001
             logger.exception("ldap3 not installed | user=%s", username)
             return None
-        except Exception:
+        except Exception:  # noqa: BLE001
             logger.exception("LDAP unexpected error | user=%s", username)
             return None
 
+    def _attempt_single_candidate(self, *, username, password, server, host, host_is_ip, cfg, force_starttls,
+                                   label, bind_user, auth_kind, last_errors):
+        """単一のバインド候補 (label, bind_user, auth_kind) を試行し結果を返す。
+
+        戻り値:
+          - User インスタンス: 認証 + 検索成功
+          - False: bind 成功したが検索結果 0 件 → 早期に全体 None を返すべきシグナル
+          - None: 失敗 (次候補継続)
+        """
+        from ldap3 import NTLM, SIMPLE  # 遅延 import (各候補で失敗を局所化)
+        try:
+            conn = self._prepare_connection(server, bind_user, password, auth_kind)
+            if not cfg.use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
+                return None
+            if not self._bind_connection(conn, host, host_is_ip, cfg.use_ssl, force_starttls, label, auth_kind, last_errors):
+                return None
+            entry = self._search_user_entry(conn, username, host, label, cfg.search_base, last_errors)
+            if not entry:
+                conn.unbind()
+                return False  # 認証は通ったがユーザが居ない
+            user = self._ensure_local_user(username, entry, cfg.upn_suffix, cfg.domain)
+            self._sync_profile_from_ldap(user, entry)
+            conn.unbind()
+            logger.info(
+                "LDAP auth success | user=%s attempt=%s bind_user=%s host=%s",
+                username, label, bind_user, host,
+                extra={'ldap': {'attempt': label, 'bind_user': bind_user, 'host': host}}
+            )
+            return user
+        except Exception as e:  # noqa: BLE001
+            logger.debug(
+                "LDAP attempt exception | user=%s label=%s error=%s", username, label, e,
+                extra={'ldap': {'attempt': label}}
+            )
+            last_errors.append((label, str(e), {'description': 'exception'}))
+            return None
+
+    # -------- 認証補助 (分割) --------
+    def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
+        """与えられた username から順序付きのバインド候補 (label, user, auth_kind) を生成."""
+        original = username
+        yielded = set()
+        def push(item):
+            if item[1] in yielded:
+                return
+            yielded.add(item[1])
+            yield item
+        if '\\' in original:
+            yield from push(("NTLM(as-is)", original, 'NTLM'))
+        if '@' in original:
+            yield from push(("UPN(as-is)", original, None))
+        if '\\' not in original and '@' not in original and cfg.domain:
+            yield from push(("NTLM(domain)", f"{cfg.domain}\\{original}", 'NTLM'))
+        if '\\' not in original and '@' not in original:
+            suffix = cfg.upn_suffix or (cfg.domain if cfg.domain and '.' in cfg.domain else None)
+            if suffix:
+                yield from push(("UPN(constructed)", f"{original}@{suffix}", None))
+
+    def _prepare_connection(self, server, bind_user, password, auth_kind):
+        """ldap3 Connection をまだ bind せず生成 (auto_bind=False)."""
+        from ldap3 import Connection, NTLM, SIMPLE
+        auth_method = NTLM if auth_kind == 'NTLM' else SIMPLE
+        return Connection(
+            server,
+            user=bind_user,
+            password=password,
+            authentication=auth_method,
+            auto_bind=False,
+            raise_exceptions=False,
+        )
+
     # ===== Helper methods (読みやすさ向上用) =====
     def _parse_host_port(self, url, use_ssl):
+        """LDAP URL から host/port を抽出 (port なければ 636/389 既定)."""
         parsed = urlparse(url)
         host = parsed.hostname or url
         port = parsed.port or (636 if use_ssl else 389)
         return host, port
 
     def _build_tls(self, use_ssl, force_starttls, ssl_mod):
+        """LDAPS/StartTLS 用 Tls オブジェクト (不要なら None)."""
         if not (use_ssl or force_starttls):
             return None
         try:
@@ -147,6 +226,7 @@ class WindowsLDAPBackend(ModelBackend):
             return None
 
     def _is_ipv4_like(self, host: str) -> bool:
+        """ホスト文字列が単純な IPv4 形式か判定 (証明書検証ログ用途)."""
         try:
             if host.count('.') != 3:
                 return False
@@ -154,30 +234,17 @@ class WindowsLDAPBackend(ModelBackend):
         except Exception:  # noqa: BLE001
             return False
 
-    def _build_candidate_credentials(self, username: str, domain: str, upn_suffix: Optional[str]):
-        original = username
-        candidates: List[Tuple[str, str, Optional[str]]] = []
-        if '\\' in original:
-            candidates.append(("NTLM(as-is)", original, 'NTLM'))
-        if '@' in original:
-            candidates.append(("UPN(as-is)", original, None))
-        if '\\' not in original and '@' not in original and domain:
-            candidates.append(("NTLM(domain)", f"{domain}\\{original}", 'NTLM'))
-        if '\\' not in original and '@' not in original:
-            suffix = upn_suffix or (domain if domain and '.' in domain else None)
-            if suffix:
-                candidates.append(("UPN(constructed)", f"{original}@{suffix}", None))
-        # distinct by bind_user
-        seen = set()
-        distinct_list = []
-        for lbl, usr, auth in candidates:
-            if usr in seen:
-                continue
-            seen.add(usr)
-            distinct_list.append((lbl, usr, auth))
-        return distinct_list
+    # 互換: 旧メソッド名 (内部では新方式に委譲)
+    def _build_candidate_credentials(self, username: str, domain: str, upn_suffix: Optional[str]):  # pragma: no cover - 互換維持
+        """互換: 旧 API 名で候補列挙を返す (新実装へ委譲)."""
+        cfg = LDAPRuntimeConfig(
+            server_url='', search_base='', domain=domain, upn_suffix=upn_suffix,
+            use_ssl=False, force_starttls=False, allow_plain=True
+        )
+        return list(self._generate_bind_candidates(username, cfg))
 
     def _log_no_candidates(self, username, domain, upn_suffix, use_ssl, force_starttls, allow_plain):
+        """候補が 0 件だった状況と生成ルールヒントを警告ログ出力."""
         logger.warning(
             "LDAP no credential candidates | user=%s original=%s domain=%s upn_suffix=%s use_ssl=%s force_starttls=%s allow_plain=%s",
             username, username, domain or '', upn_suffix or '', use_ssl, force_starttls, allow_plain
@@ -187,18 +254,21 @@ class WindowsLDAPBackend(ModelBackend):
         )
 
     def _start_tls_if_needed(self, conn, host, bind_user, label, last_errors):
+        """必要条件を満たす場合に StartTLS を実行 (失敗時は記録して False)."""
         if conn.start_tls():
             return True
         logger.warning(
             "LDAP StartTLS failed | host=%s user=%s label=%s last_error=%s result=%s",
             host, bind_user, label, conn.last_error, conn.result,
-            extra={'ldap_params': {'attempt': label, 'user': bind_user, 'stage': 'starttls'}}
+            # ログ構造キー統一: ldap_params -> ldap
+            extra={'ldap': {'attempt': label, 'user': bind_user, 'stage': 'starttls'}}
         )
         last_errors.append((label, conn.last_error, conn.result))
         conn.unbind()
         return False
 
     def _bind_connection(self, conn, host, host_is_ip, use_ssl, force_starttls, label, auth_method, last_errors):
+        """Connection.bind を実行し成功可否 (失敗時詳細を蓄積)."""
         if conn.bind():
             return True
         result_dict = conn.result if isinstance(conn.result, dict) else {}
@@ -214,6 +284,7 @@ class WindowsLDAPBackend(ModelBackend):
         return False
 
     def _search_user_entry(self, conn, username, host, label, search_base, last_errors):
+        """sAMAccountName でユーザ検索し最初のエントリ (無ければ None)."""
         from ldap3 import SUBTREE  # 局所 import (既に本体で import されているが保険)
         search_filter = f'(sAMAccountName={username})'
         attributes = ['cn', 'mail', 'distinguishedName', 'department', 'title', 'memberOf', 'givenName', 'sn', 'displayName']
@@ -221,7 +292,8 @@ class WindowsLDAPBackend(ModelBackend):
             logger.warning(
                 "LDAP search returned no entries | host=%s bind_user=%s filter=%s base=%s",
                 host, conn.user, search_filter, search_base,
-                extra={'ldap_params': {'attempt': label, 'filter': search_filter, 'base': search_base}}
+                # ログ構造キー統一: ldap_params -> ldap
+                extra={'ldap': {'attempt': label, 'filter': search_filter, 'base': search_base}}
             )
             return None
         if not conn.entries:
@@ -229,7 +301,8 @@ class WindowsLDAPBackend(ModelBackend):
             return None
         return conn.entries[0]
 
-    def _get_or_create_local_user(self, username, entry, upn_suffix, domain):
+    def _ensure_local_user(self, username, entry, upn_suffix, domain):
+        """ローカルユーザを取得/新規作成し返す (作成時は最小属性設定)."""
         UserModel = get_user_model()
         try:
             return UserModel.objects.get(username=username)
@@ -249,7 +322,8 @@ class WindowsLDAPBackend(ModelBackend):
             user.save()
             return user
 
-    def _update_user_profile(self, user, entry):
+    def _sync_profile_from_ldap(self, user, entry):
+        """UserProfile があれば LDAP 属性差分を同期 (存在しなくても失敗しない)."""
         try:
             from .models import UserProfile, UserSource  # 遅延 import
             profile, _ = UserProfile.objects.get_or_create(user=user)
@@ -278,6 +352,7 @@ class WindowsLDAPBackend(ModelBackend):
             logger.debug("UserProfile 更新をスキップ (存在しない/エラー)")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
+        """全候補失敗時に試行概要と各試行詳細を DEBUG 出力."""
         attempt_count = len(last_errors)
         logger.debug(
             "LDAP all bind attempts failed | user=%s host=%s ip=%s domain=%s attempts=%d secure=(ssl:%s starttls:%s)",
@@ -295,138 +370,3 @@ class WindowsLDAPBackend(ModelBackend):
             logger.debug(
                 "LDAP attempt detail | user=%s label=%s code=%s desc=%s msg=%s last_error=%s", username, l, code, desc, msg, le
             )
-    
-    def get_approvers_for_user(self, user_dn):
-        """
-        Active DirectoryからOU階層に基づく承認者を取得
-        """
-        try:
-            from ldap3 import Server, Connection, ALL, NTLM, SUBTREE, LEVEL
-            
-            # LDAP設定を取得 (統一名を優先)
-            ldap_server = getattr(settings, 'LDAP_SERVER_URL', getattr(settings, 'LDAP_AUTH_URL', 'ldap://localhost:389'))
-            search_base = getattr(settings, 'LDAP_SEARCH_BASE', getattr(settings, 'LDAP_AUTH_SEARCH_BASE', 'DC=company,DC=com'))
-            service_user = getattr(settings, 'LDAP_BIND_DN', getattr(settings, 'LDAP_AUTH_CONNECTION_USERNAME', None))
-            service_password = getattr(settings, 'LDAP_BIND_PASSWORD', getattr(settings, 'LDAP_AUTH_CONNECTION_PASSWORD', None))
-            
-            if not service_user:
-                # サービスアカウントが設定されていない場合はエラー
-                logger.error(
-                    "LDAP service account not configured | server=%s search_base=%s", ldap_server, search_base,
-                    extra={
-                        'ldap_params': {
-                            'server': ldap_server,
-                            'search_base': search_base
-                        }
-                    }
-                )
-                return []
-            
-            # サーバー接続
-            server = Server(ldap_server, get_info=ALL)
-            conn = Connection(server, user=service_user, password=service_password)
-            
-            if not conn.bind():
-                logger.error(
-                    "Failed to bind to LDAP server with service account | server=%s service_user=%s search_base=%s", 
-                    ldap_server, service_user, search_base,
-                    extra={
-                        'ldap_params': {
-                            'server': ldap_server,
-                            'service_user': service_user,
-                            'search_base': search_base
-                        }
-                    }
-                )
-                return []
-            
-            # OU階層を抽出（仕様変更: 自OU + 1階層上のみ）
-            full_hierarchy = self._extract_ou_hierarchy(user_dn)
-            if full_hierarchy:
-                # full_hierarchy は下位->上位順。index 0 が自OU、1 が親OU (存在すれば)
-                ou_hierarchy = full_hierarchy[:2]
-            else:
-                ou_hierarchy = []
-            approvers = []
-            
-            # 各OU階層のユーザーを検索
-            for idx, ou_dn in enumerate(ou_hierarchy):
-                search_filter = '(&(objectClass=user)(!(objectClass=computer)))'
-                attributes = ['sAMAccountName', 'cn', 'mail', 'distinguishedName']
-                # idx=0: 自OU → 配下全て (SUBTREE) / idx>=1: 親OU → 直下のみ (LEVEL)
-                scope = SUBTREE if idx == 0 else LEVEL
-                success = conn.search(
-                    search_base=ou_dn,
-                    search_filter=search_filter,
-                    search_scope=scope,
-                    attributes=attributes
-                )
-                
-                if success:
-                    for entry in conn.entries:
-                        username = str(entry.sAMAccountName) if hasattr(entry, 'sAMAccountName') else ''
-                        display_name = str(entry.cn) if hasattr(entry, 'cn') else ''
-                        email = str(entry.mail) if hasattr(entry, 'mail') else ''
-                        entry_dn = str(entry.distinguishedName) if hasattr(entry, 'distinguishedName') else ''
-                        
-                        if username and display_name:
-                            approvers.append({
-                                'username': username,
-                                'display_name': display_name,
-                                'email': email,
-                                'dn': entry_dn,
-                                'ou': ou_dn
-                            })
-            
-            conn.unbind()
-            return approvers
-            
-        except Exception as e:
-            logger.exception(
-                "Error getting approvers from LDAP | user_dn=%s server=%s search_base=%s", 
-                user_dn, locals().get('ldap_server'), locals().get('search_base'),
-                extra={
-                    'ldap_params': {
-                        'user_dn': user_dn,
-                        'server': locals().get('ldap_server'),
-                        'search_base': locals().get('search_base')
-                    }
-                }
-            )
-            return []
-    
-    def _extract_ou_hierarchy(self, user_dn):
-        """
-        ユーザーのDNからOU階層を抽出
-        下位から上位への順序で返す
-        """
-        ou_list = []
-        parts = user_dn.split(',')
-        
-        # OUの部分を抽出
-        ou_parts = []
-        dc_parts = []
-        
-        for part in parts:
-            part = part.strip()
-            if part.startswith('OU='):
-                ou_parts.append(part)
-            elif part.startswith('DC='):
-                dc_parts.append(part)
-        
-        # DC部分を結合
-        base_dn = ','.join(dc_parts)
-        
-        # OU階層を構築（下位から上位へ）
-        for i in range(len(ou_parts)):
-            ou_dn = ','.join(ou_parts[i:] + dc_parts)
-            ou_list.append(ou_dn)
-        
-        # ルートドメインも追加
-        if base_dn not in ou_list:
-            ou_list.append(base_dn)
-        
-        return ou_list
-
-
-    # ...existing code...

@@ -35,10 +35,8 @@ def resync_and_fetch_approvers(request):
         if not ldap_dn:
             logger.warning("[resync] missing ldap_dn user=%s", user.username)
             return JsonResponse({'ok': False, 'error': 'ldap_dn_not_set', 'candidates': []}, status=400)
-
-        from users.backends import WindowsLDAPBackend
-        backend = WindowsLDAPBackend()
-        approvers_raw = backend.get_approvers_for_user(ldap_dn) or []
+        from users.ldap_service import LDAPReadOnlyService
+        approvers_raw = LDAPReadOnlyService().get_approvers_for_dn(ldap_dn) or []
         logger.debug("[resync] fetched count=%d", len(approvers_raw))
         cleaned = [
             {
@@ -72,21 +70,21 @@ class UserSearchView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        query = self.request.query_params.get('q', '')
-        department = self.request.query_params.get('department', '')
-        
+        query = self.request.GET.get('q', '')
+        department = self.request.GET.get('department', '')
+
         queryset = User.objects.filter(is_active=True)
-        
+
         if query:
             queryset = queryset.filter(
                 Q(username__icontains=query) |
                 Q(first_name__icontains=query) |
                 Q(last_name__icontains=query)
             )
-        
+
         if department:
             queryset = queryset.filter(department_code=department)
-        
+
         return queryset.order_by('username')[:50]  # 最大50件まで
 
 
