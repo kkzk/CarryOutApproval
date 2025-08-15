@@ -60,13 +60,8 @@ def root_redirect(request):
         return redirect('users:login')
 ```
 
-Django で request.user という属性を使えるようにしているのは、
-django.contrib.auth.middleware.AuthenticationMiddleware というミドルウェアの役割です。
-
-このミドルウェアが、リクエストごとにセッション情報からユーザーを復元し、request.user にセットしています。
-settings.py の MIDDLEWARE リストに通常含まれています。
-
-[Web リクエストにおける認証](https://docs.djangoproject.com/ja/5.2/topics/auth/default/#authentication-in-web-requests)
+`request` はおそらくブラウザから渡ってきた何かだと想像がつくのですが、 `user` という属性が使えるのは
+何か Django のフレームワークなのだろうということにして、いったん置いておきます。
 
 `redirect()` の中の `applications:kanban-board` という表記は、 [URL パターンに名前をつける](https://docs.djangoproject.com/ja/5.2/topics/http/urls/#naming-url-patterns) あたりで説明してあるようですがまだ理解及ばず。すみません。
 
