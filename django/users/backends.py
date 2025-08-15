@@ -9,7 +9,7 @@
 # 2. 認証情報 (ユーザー名/パスワード) が無効
 #   - ログ例: `desc=invalidCredentials`
 #   - 発生箇所: Bind (認証) 時
-#   - 補足: Active Directory から返されるエラーコード (例: 52e) が message に含まれることがあります。
+#   - 補足: Active Directory から返されるエラーコード (例: 52e) があります。
 #
 # 3. ネットワーク接続の問題 (ファイアウォール、VPN など)
 #   - ログ例: `desc=Connect error` または `desc=Can't contact LDAP server`
@@ -86,7 +86,18 @@ class WindowsLDAPBackend(ModelBackend):
                 return user
         except UserModel.DoesNotExist:
             pass
-        return self._authenticate_ldap3(username, password)
+        
+        # LDAPで認証を試みる
+        user, auth_result = self._authenticate_ldap3(username, password)
+        
+        # 認証失敗の場合はリクエストオブジェクトにエラー情報を保存
+        if request and not user and auth_result:
+            if hasattr(request, 'auth_error_messages'):
+                request.auth_error_messages.append(auth_result)
+            else:
+                request.auth_error_messages = [auth_result]
+            
+        return user
 
     def _authenticate_ldap3(self, username, password):
         """利用者資格情報で AD (LDAP) に直接バインドして認証するメインフロー。
@@ -98,9 +109,9 @@ class WindowsLDAPBackend(ModelBackend):
           4. 最初に成功したエントリでローカルユーザ作成/取得 & プロファイル同期し返却
           5. 全候補失敗時は詳細ログを残して None
 
-        例外:
-          - ldap3 ImportError は即ログ + None
-          - その他想定外例外もログ後 None
+        戻り値:
+          - (ユーザーオブジェクト, None): 認証成功時
+          - (None, エラーメッセージ): 認証失敗時
         """
         try:
             # 1) 設定ロード (毎回: 動的に設定変更される可能性を考慮 / キャッシュは不要な軽コスト)
@@ -126,10 +137,11 @@ class WindowsLDAPBackend(ModelBackend):
             if not candidates:
                 # 早期終了: 生成条件に合致する資格文字列が一つも無い (入力形式 + 設定不足)
                 self._log_no_candidates(username, cfg.domain, cfg.upn_suffix, cfg.use_ssl, force_starttls, cfg.allow_plain)
-                return None
+                return None, "認証に必要なドメイン情報が不足しています。システム管理者に連絡してください。"
+            
             logger.debug("LDAP bind candidates | user=%s candidates=%s", username, [(c[0], c[1]) for c in candidates])
             for label, bind_user, auth_kind in candidates:
-                user = self._attempt_single_candidate(
+                user, error_msg = self._attempt_single_candidate(
                     username=username,
                     password=password,
                     server=server,
@@ -144,40 +156,53 @@ class WindowsLDAPBackend(ModelBackend):
                 )
                 # 特殊ケース: エントリ無し (bind 成功だが検索 0 件) → 全体として None を確定
                 if user is False:  # sentinel (検索なし早期終了)
-                    return None
+                    return None, "ユーザーアカウントがLDAPサーバーに存在しません。"
                 # User インスタンスが返れば成功
                 if user is not None:
-                    return user
+                    return user, None
+            
             # 全候補失敗: 蓄積した失敗情報を DEBUG 出力し None
             self._log_all_attempt_fail(username, host, host_is_ip, cfg.domain, last_errors, cfg.use_ssl, force_starttls)
-            return None
+            
+            # エラー詳細から適切なユーザー向けメッセージを生成
+            error_msg = self._generate_user_friendly_error(last_errors)
+            return None, error_msg
+            
         except ImportError:  # noqa: BLE001
             logger.exception("ldap3 not installed | user=%s", username)
-            return None
+            return None, "認証システムの設定に問題があります。システム管理者に連絡してください。"
         except Exception:  # noqa: BLE001
             logger.exception("LDAP unexpected error | user=%s", username)
-            return None
+            return None, "認証処理中に予期せぬエラーが発生しました。システム管理者に連絡してください。"
 
     def _attempt_single_candidate(self, *, username, password, server, host, host_is_ip, cfg, force_starttls,
                                    label, bind_user, auth_kind, last_errors):
         """単一のバインド候補 (label, bind_user, auth_kind) を試行し結果を返す。
 
         戻り値:
-          - User インスタンス: 認証 + 検索成功
-          - False: bind 成功したが検索結果 0 件 → 早期に全体 None を返すべきシグナル
-          - None: 失敗 (次候補継続)
+          - (User インスタンス, None): 認証 + 検索成功
+          - (False, None): bind 成功したが検索結果 0 件 → 早期に全体 None を返すべきシグナル
+          - (None, エラーメッセージ): 失敗 (次候補継続)
         """
         from ldap3 import NTLM, SIMPLE  # 遅延 import (各候補で失敗を局所化)
         try:
             conn = self._prepare_connection(server, bind_user, password, auth_kind)
             if not cfg.use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
-                return None
+                return None, "セキュアな接続（STARTTLS）の確立に失敗しました。"
+            
             if not self._bind_connection(conn, host, host_is_ip, cfg.use_ssl, force_starttls, label, auth_kind, last_errors):
-                return None
+                # 最後のエラーからメッセージを生成
+                if last_errors:
+                    _, _, result = last_errors[-1]
+                    if isinstance(result, dict) and result.get('description') == 'invalidCredentials':
+                        return None, "ユーザー名またはパスワードが正しくありません。"
+                return None, "LDAPサーバーへの接続に失敗しました。"
+            
             entry = self._search_user_entry(conn, username, host, label, cfg.search_base, last_errors)
             if not entry:
                 conn.unbind()
-                return False  # 認証は通ったがユーザが居ない
+                return False, None  # 認証は通ったがユーザが居ない
+            
             user = self._ensure_local_user(username, entry, cfg.upn_suffix, cfg.domain)
             self._sync_profile_from_ldap(user, entry)
             conn.unbind()
@@ -186,14 +211,34 @@ class WindowsLDAPBackend(ModelBackend):
                 username, label, bind_user, host,
                 extra={'ldap': {'attempt': label, 'bind_user': bind_user, 'host': host}}
             )
-            return user
+            return user, None
         except Exception as e:  # noqa: BLE001
             logger.debug(
                 "LDAP attempt exception | user=%s label=%s error=%s", username, label, e,
                 extra={'ldap': {'attempt': label}}
             )
             last_errors.append((label, str(e), {'description': 'exception'}))
-            return None
+            return None, "認証処理中にエラーが発生しました。"
+            
+    def _generate_user_friendly_error(self, last_errors):
+        """エラーの詳細からユーザーに表示するメッセージを生成"""
+        if not last_errors:
+            return "認証に失敗しました。"
+            
+        # 最後に発生したエラーから主要な原因を判断
+        _, last_error, last_result = last_errors[-1]
+        
+        if isinstance(last_result, dict):
+            desc = last_result.get('description', '')
+            if desc == 'invalidCredentials':
+                return "ユーザー名またはパスワードが正しくありません。"
+            elif desc == "Can't contact LDAP server":
+                return "LDAPサーバーに接続できません。ネットワーク状態を確認してください。"
+            elif desc == "Connect error":
+                return "サーバーへの接続中にエラーが発生しました。ネットワーク状態を確認してください。"
+        
+        # 一般的なエラーメッセージ
+        return "認証に失敗しました。システム管理者に連絡してください。"
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
@@ -298,9 +343,20 @@ class WindowsLDAPBackend(ModelBackend):
         result_code = result_dict.get('result')
         result_desc = result_dict.get('description') or getattr(conn.result, 'description', None)
         result_msg = result_dict.get('message')
-        logger.debug(
+        logger.warning(
             "LDAP bind failed | host=%s ip=%s secure_ssl=%s starttls=%s label=%s auth=%s code=%s desc=%s message=%s last_error=%s",
             host, host_is_ip, use_ssl, force_starttls, label, auth_method, result_code, result_desc, result_msg, conn.last_error,
+            extra={'ldap': {
+                'host': host, 
+                'is_ip': host_is_ip, 
+                'use_ssl': use_ssl, 
+                'starttls': force_starttls, 
+                'auth_method': auth_method, 
+                'error_code': result_code, 
+                'description': result_desc,
+                'message': result_msg,
+                'attempt': label
+            }}
         )
         last_errors.append((label, conn.last_error, conn.result))
         conn.unbind()
@@ -375,9 +431,9 @@ class WindowsLDAPBackend(ModelBackend):
             logger.debug("UserProfile 更新をスキップ (存在しない/エラー)")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
-        """全候補失敗時に試行概要と各試行詳細を DEBUG 出力."""
+        """全候補失敗時に試行概要と各試行詳細を詳細ログ出力."""
         attempt_count = len(last_errors)
-        logger.debug(
+        logger.warning(
             "LDAP all bind attempts failed | user=%s host=%s ip=%s domain=%s attempts=%d secure=(ssl:%s starttls:%s)",
             username, host, host_is_ip, domain or '', attempt_count, use_ssl, force_starttls
         )
@@ -390,6 +446,10 @@ class WindowsLDAPBackend(ModelBackend):
                 desc = getattr(r, 'description', None)
                 code = getattr(r, 'result', None)
                 msg = getattr(r, 'message', None)
-            logger.debug(
-                "LDAP attempt detail | user=%s label=%s code=%s desc=%s msg=%s last_error=%s", username, l, code, desc, msg, le
+            
+            # エラーの詳細情報をわかりやすく出力
+            logger.warning(
+                "LDAP auth failure | user=%s attempt=%s error_code=%s description=%s message=%s last_error=%s", 
+                username, l, code, desc, msg, le,
+                extra={'ldap': {'attempt': l, 'error_code': code, 'description': desc, 'message': msg}}
             )

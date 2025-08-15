@@ -109,7 +109,11 @@ class LoginView(View):
                 next_url = request.GET.get('next', 'applications:kanban-board')
                 return redirect(next_url)
             else:
-                messages.error(request, 'ユーザー名またはパスワードが間違っています。')
+                # 認証エラーメッセージがある場合は表示
+                if hasattr(request, 'auth_error_messages') and request.auth_error_messages:
+                    messages.error(request, request.auth_error_messages[0])
+                else:
+                    messages.error(request, 'ユーザー名またはパスワードが正しくありません。')
         else:
             messages.error(request, 'ユーザー名とパスワードを入力してください。')
         
