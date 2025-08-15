@@ -1,4 +1,27 @@
 # Windows compatible LDAP backend using ldap3
+#
+# 主な接続失敗・認証失敗の原因と、それに対応するログメッセージの例です。
+#
+# 1. サーバーのアドレスやポートが間違っている
+#   - ログ例: `desc=Can't contact LDAP server`
+#   - 発生箇所: Bind (接続試行) 時
+#
+# 2. 認証情報 (ユーザー名/パスワード) が無効
+#   - ログ例: `desc=invalidCredentials`
+#   - 発生箇所: Bind (認証) 時
+#   - 補足: Active Directory から返されるエラーコード (例: 52e) が message に含まれることがあります。
+#
+# 3. ネットワーク接続の問題 (ファイアウォール、VPN など)
+#   - ログ例: `desc=Connect error` または `desc=Can't contact LDAP server`
+#   - 発生箇所: StartTLS や Bind (接続試行) 時
+#   - 補足: タイムアウトや接続拒否が発生します。
+#
+# 4. STARTTLS の失敗 (証明書の問題など)
+#   - ログ例: `LDAP StartTLS failed ... desc=Connect error`
+#   - 発生箇所: StartTLS 実行時
+#   - 補足: サーバーがSTARTTLSをサポートしていない、またはクライアントがサーバー証明書を検証できない場合に発生します。
+#
+
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
 from django.conf import settings
@@ -39,8 +62,8 @@ class LDAPRuntimeConfig:
         )
 
 
-
-logger = logging.getLogger(__name__)
+# Django標準の方法でロガーを取得
+logger = logging.getLogger('django.security.authentication')
 
 
 class WindowsLDAPBackend(ModelBackend):
