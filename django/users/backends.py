@@ -24,6 +24,7 @@
 
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
+from django.contrib import messages
 from django.conf import settings
 import logging
 from urllib.parse import urlparse
@@ -90,12 +91,15 @@ class WindowsLDAPBackend(ModelBackend):
         # LDAPで認証を試みる
         user, auth_result = self._authenticate_ldap3(username, password)
         
-        # 認証失敗の場合はリクエストオブジェクトにエラー情報を保存
+        # 認証失敗の場合は Django messages フレームワークへ分類済みメッセージを投入
         if request and not user and auth_result:
-            if hasattr(request, 'auth_error_messages'):
-                request.auth_error_messages.append(auth_result)
-            else:
-                request.auth_error_messages = [auth_result]
+            try:
+                messages.error(request, auth_result)
+            except Exception:  # フォールバック (テストや一部非標準環境)
+                # requestオブジェクトに暫定保持 (型チェッカ警告回避のため _ 属性名)
+                existing = getattr(request, '_auth_error_messages', [])
+                existing.append(auth_result)
+                setattr(request, '_auth_error_messages', existing)
             
         return user
 
@@ -156,7 +160,10 @@ class WindowsLDAPBackend(ModelBackend):
                 )
                 # 特殊ケース: エントリ無し (bind 成功だが検索 0 件) → 全体として None を確定
                 if user is False:  # sentinel (検索なし早期終了)
-                    return None, "ユーザーアカウントがLDAPサーバーに存在しません。"
+                    return None, (
+                        "【LDAPユーザー未登録】LDAPには接続できましたが該当ユーザー情報が見つかりません。"  # 事象概要
+                        "運用窓口へ『LDAPにユーザー未登録（追加/同期要確認）』と連絡してください。"
+                    )
                 # User インスタンスが返れば成功
                 if user is not None:
                     return user, None
@@ -225,20 +232,59 @@ class WindowsLDAPBackend(ModelBackend):
         if not last_errors:
             return "認証に失敗しました。"
             
-        # 最後に発生したエラーから主要な原因を判断
+        # 直近のエラー (最後) を抽出
         _, last_error, last_result = last_errors[-1]
-        
-        if isinstance(last_result, dict):
-            desc = last_result.get('description', '')
-            if desc == 'invalidCredentials':
-                return "ユーザー名またはパスワードが正しくありません。"
-            elif desc == "Can't contact LDAP server":
-                return "LDAPサーバーに接続できません。ネットワーク状態を確認してください。"
-            elif desc == "Connect error":
-                return "サーバーへの接続中にエラーが発生しました。ネットワーク状態を確認してください。"
-        
-        # 一般的なエラーメッセージ
-        return "認証に失敗しました。システム管理者に連絡してください。"
+
+        def any_error_contains(*keywords):
+            """蓄積された last_errors の文字列/description に指定キーワードのいずれかが含まれるか。"""
+            for _label, le_msg, res in last_errors:
+                texts = [le_msg or ""]
+                if isinstance(res, dict):
+                    texts.append(str(res.get('description') or ''))
+                    texts.append(str(res.get('message') or ''))
+                joined = ' '.join(texts).lower()
+                if any(k.lower() in joined for k in keywords):
+                    return True
+            return False
+
+        # ========== 分類ポリシー ==========
+        # カテゴリ1 (ユーザ自己解決): 資格情報誤り
+        # カテゴリ2 (運用窓口対応): ネットワーク不通 / LDAP接続はできたがユーザ未登録（このケースは呼び出し側で直接返却されるが保険）
+        # カテゴリ3 (保守SE): DNS解決不可 / 設定不足 / TLS失敗 (自己解決不可) / 想定外例外
+
+        # --- 1) invalidCredentials ---
+        if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':
+            return (
+                "【資格情報誤り】ユーザー名またはパスワードが正しくありません。 "  # カテゴリ1
+                "入力を再確認し、CapsLock/VPN/IME状態を確認して再試行してください。"
+            )
+
+        # --- 2) ネットワーク / 接続不可 ---
+        if any_error_contains(
+            "can't contact ldap server", "connect error", "socket connection error", "timeout", "timed out",
+            "unreachable", "connection refused", "10060"
+        ):
+            return (
+                "【接続不可/タイムアウト】LDAPサーバーに到達できません (ネットワーク/接続エラー)。 "
+                "LAN/無線/VPN を確認し問題なければ、運用窓口へ『LDAPサーバーに接続不可 (ネットワーク不通/タイムアウト)』と連絡してください。"
+            )
+
+        # --- 2b) サーバーアドレス不正 / DNS 解決不能 ---
+        if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):
+            return (
+                "【DNS解決不可】LDAPサーバーのホスト名/アドレスを解決できません。 "
+                "運用窓口へ『LDAPサーバー設定(ホスト名/ポート)要確認』と連絡してください。"
+            )
+
+        # --- 3) StartTLS / TLS 関連 (ユーザ操作では解決困難) ---
+        if any_error_contains("starttls", "tls", "ssl"):
+            return (
+                "【暗号化初期化失敗】セキュア接続の初期化に失敗しました。 "  # カテゴリ3
+                "運用窓口経由で保守担当へ『LDAP StartTLS/SSL 失敗』と連絡してください。"
+            )
+
+        # --- 4) その他の例外 (設定不足・不明) ---
+        return "【分類不能】認証に失敗しました。運用窓口へ状況を報告し、必要に応じて保守担当へエスカレーションしてください。"
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
