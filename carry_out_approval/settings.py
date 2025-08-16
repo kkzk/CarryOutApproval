@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from decouple import config
+from decouple import config, Csv
 import os
 # import ldap
 # from django_auth_ldap.config import LDAPSearch
@@ -204,13 +204,26 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
 ]
 
+
 # ローカル認証を LDAP より先に試すユーザ名パターン (正規表現) ※本番では空リスト推奨
-# デフォルトで Django 標準 'admin' と、開発用に 'local_*', 'dev_*' を許可
-AUTH_LOCAL_FIRST_PATTERNS = [
-    r'^admin$',
-    r'^local_.*$',
-    r'^dev_.*$',
-]
+# .env 例 (セミコロン区切り):
+#   AUTH_LOCAL_FIRST_PATTERNS=^admin$;^local_.*$;^dev_.*$
+# 2つだけなら:
+#   AUTH_LOCAL_FIRST_PATTERNS=^foo$;^bar_.*$
+# 空または未設定ならデフォルト (admin/local_/dev_) を採用。
+# AUTH_LOCAL_FIRST_PATTERNS: .env からパターンを読み込み (セミコロン/カンマ区切り両対応)
+_auth_local_first_raw = config('AUTH_LOCAL_FIRST_PATTERNS', default='')  # decouple 経由で .env 読み込み
+if isinstance(_auth_local_first_raw, bool):  # 想定外 (真偽値) を文字列化
+    _auth_local_first_raw = ''
+if _auth_local_first_raw:
+    normalized = str(_auth_local_first_raw).replace(';', ',')
+    AUTH_LOCAL_FIRST_PATTERNS = [p.strip() for p in normalized.split(',') if p.strip()]
+else:
+    AUTH_LOCAL_FIRST_PATTERNS = [r'^admin$', r'^local_.*$', r'^dev_.*$']
+
+# 起動時に patterns を一度ログ (DEBUG) に表示 (トラブルシュート用)
+import logging as _logging
+_logging.getLogger('users.backends').debug('Loaded AUTH_LOCAL_FIRST_PATTERNS raw=%r parsed=%r', _auth_local_first_raw, AUTH_LOCAL_FIRST_PATTERNS)
 
 # Logging settings for LDAP debugging
 LOGGING = {

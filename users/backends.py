@@ -64,8 +64,9 @@ class LDAPRuntimeConfig:
         )
 
 
-# Django標準の方法でロガーを取得
-logger = logging.getLogger('django.security.authentication')
+# ロガー
+logger = logging.getLogger('django.security.authentication')  # 既存 WARNING/INFO 用
+dbg_logger = logging.getLogger('users.backends')  # 詳細デバッグ用 (LOGGING で DEBUG レベル指定済)
 
 
 class WindowsLDAPBackend(ModelBackend):
@@ -107,20 +108,39 @@ class WindowsLDAPBackend(ModelBackend):
 
         # (C) local-first: パターン & 非LDAPユーザ
         patterns = getattr(settings, 'AUTH_LOCAL_FIRST_PATTERNS', []) or []
+        dbg_logger.debug(
+            "Local-first precheck | user=%s exists=%s patterns=%s", username, local_user is not None, patterns
+        )
         if local_user is not None and patterns:
             try:
                 from .models import UserSource  # 遅延 import
-                is_ldap_user = (getattr(local_user, 'source', None) == getattr(UserSource, 'LDAP', None))
+                user_source = getattr(local_user, 'source', None)
+                is_ldap_user = (user_source == getattr(UserSource, 'LDAP', None))
             except Exception:
+                user_source = 'UNKNOWN'
                 is_ldap_user = True  # 判定不能時は安全側 (local-first 不可)
+            dbg_logger.debug(
+                "Local-first user info | user=%s source=%s is_ldap_user=%s usable=%s", 
+                username, user_source, is_ldap_user, local_user.has_usable_password()
+            )
             if not is_ldap_user:
+                matched_any = False
                 for p in patterns:
                     try:
-                        if re.match(p, username) and local_user.check_password(password):
-                            logger.info("Local-first auth success | user=%s pattern=%s", username, p)
-                            return local_user
+                        if re.match(p, username):
+                            dbg_logger.debug("Local-first pattern matched | user=%s pattern=%s", username, p)
+                            matched_any = True
+                            if local_user.check_password(password):
+                                logger.info("Local-first auth success | user=%s pattern=%s", username, p)
+                                return local_user
+                            else:
+                                dbg_logger.debug("Local-first password mismatch | user=%s pattern=%s", username, p)
                     except re.error:
                         logger.warning("Invalid regex in AUTH_LOCAL_FIRST_PATTERNS | pattern=%s", p)
+                if matched_any:
+                    dbg_logger.debug("Local-first patterns matched but password failed or unusable | user=%s", username)
+            else:
+                dbg_logger.debug("Local-first skipped (LDAP sourced user) | user=%s", username)
 
         # (D) LDAP 認証
         user, auth_result = self._authenticate_ldap3(username, password)
