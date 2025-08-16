@@ -6,11 +6,8 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """ユーザー + プロファイル フィールド (読み取り専用)"""
+    """カスタムユーザー (統合済みLDAP拡張)"""
     full_name = serializers.SerializerMethodField()
-    department_code = serializers.CharField(source='profile.department_code', read_only=True)
-    department_name = serializers.CharField(source='profile.department_name', read_only=True)
-    title = serializers.CharField(source='profile.title', read_only=True)
 
     class Meta:
         model = User

@@ -17,7 +17,7 @@
                 "isDefault": true
             },
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -44,7 +44,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -69,7 +69,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -101,7 +101,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -128,7 +128,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -150,7 +150,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -172,7 +172,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -194,7 +194,7 @@
             ],
             "group": "build",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -215,7 +215,7 @@
             ],
             "group": "test",
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -330,7 +330,7 @@
                 "isDefault": false
             },
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,
@@ -367,7 +367,7 @@
                 "isDefault": false
             },
             "options": {
-                "cwd": "${workspaceFolder}/django"
+                "cwd": "${workspaceFolder}"
             },
             "presentation": {
                 "echo": true,

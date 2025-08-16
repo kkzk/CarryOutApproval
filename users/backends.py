@@ -27,8 +27,9 @@ from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.conf import settings
 import logging
+import re
 from urllib.parse import urlparse
-from typing import List, Tuple, Optional, Iterable
+from typing import List, Tuple, Optional, Iterable, Any, cast
 from dataclasses import dataclass
 
 # ================== LDAP 定数/Dataclass ==================
@@ -77,31 +78,64 @@ class WindowsLDAPBackend(ModelBackend):
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        """Django 標準 authenticate 入口: まずローカルパスワードを試し未命中なら LDAP."""
+        """認証フロー (現行ポリシー要約)
+
+        ゴール:
+          - 開発/試験用の明示パターンに合致する `username` は LDAP 問い合わせ不要。
+
+        手順:
+          A. username/password 無し → None
+          B. ローカルユーザ取得
+          C. パターン & 非LDAP ならローカルPW先行 (成功で return)
+          D. LDAP 認証 (成功で return)
+          E. 失敗: メッセージ付与し None
+
+        セキュリティ:
+          - source==LDAP は常に AD でのみ検証
+          - パターンは本番で空リスト運用
+        """
+        # (A) username/password 無し → None
         if not username or not password:
             return None
+
+        # (B) ローカルユーザ取得
         UserModel = get_user_model()
         try:
-            user = UserModel.objects.get(username=username)
-            if user.check_password(password):
-                return user
+            local_user = UserModel.objects.get(username=username)
         except UserModel.DoesNotExist:
-            pass
-        
-        # LDAPで認証を試みる
+            local_user = None
+
+        # (C) local-first: パターン & 非LDAPユーザ
+        patterns = getattr(settings, 'AUTH_LOCAL_FIRST_PATTERNS', []) or []
+        if local_user is not None and patterns:
+            try:
+                from .models import UserSource  # 遅延 import
+                is_ldap_user = (getattr(local_user, 'source', None) == getattr(UserSource, 'LDAP', None))
+            except Exception:
+                is_ldap_user = True  # 判定不能時は安全側 (local-first 不可)
+            if not is_ldap_user:
+                for p in patterns:
+                    try:
+                        if re.match(p, username) and local_user.check_password(password):
+                            logger.info("Local-first auth success | user=%s pattern=%s", username, p)
+                            return local_user
+                    except re.error:
+                        logger.warning("Invalid regex in AUTH_LOCAL_FIRST_PATTERNS | pattern=%s", p)
+
+        # (D) LDAP 認証
         user, auth_result = self._authenticate_ldap3(username, password)
-        
-        # 認証失敗の場合は Django messages フレームワークへ分類済みメッセージを投入
-        if request and not user and auth_result:
+        if user is not None:
+            return user
+
+        # (E) 失敗時メッセージ
+        if request and auth_result:
             try:
                 messages.error(request, auth_result)
-            except Exception:  # フォールバック (テストや一部非標準環境)
-                # requestオブジェクトに暫定保持 (型チェッカ警告回避のため _ 属性名)
+            except Exception:  # 非標準環境フォールバック
                 existing = getattr(request, '_auth_error_messages', [])
                 existing.append(auth_result)
                 setattr(request, '_auth_error_messages', existing)
-            
-        return user
+        return None
 
     def _authenticate_ldap3(self, username, password):
         """利用者資格情報で AD (LDAP) に直接バインドして認証するメインフロー。
@@ -288,7 +322,36 @@ class WindowsLDAPBackend(ModelBackend):
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
-        """与えられた username から順序付きのバインド候補 (label, user, auth_kind) を生成."""
+        """与えられた `username` と設定から bind 候補を優先順位付きで生成する。
+
+        生成ルール (重複排除 / 上から順に試行):
+          1. 入力に `\\` が含まれる → そのまま: "NTLM(as-is)" (auth_kind='NTLM')
+          2. 入力に `@` が含まれる  → そのまま: "UPN(as-is)" (auth_kind=None ⇒ SIMPLE)
+          3. `\\` も `@` も無く cfg.domain があれば "NTLM(domain)": `domain\\username`
+          4. (3 の条件後) UPN サフィックスを決定できれば "UPN(constructed)": `username@suffix`
+             (suffix は cfg.upn_suffix 優先 / 無ければ cfg.domain が FQDN(ドット含む) の場合に流用)
+
+        auth_kind:
+          'NTLM' → ldap3 の NTLM 認証を使用 / None → SIMPLE (UPN) 認証。
+
+        例:
+          - 入力: "corp\\alice" domain=EXAMPLE upn_suffix=None
+              → [ ("NTLM(as-is)", "corp\\alice", 'NTLM') ]  (すでに \\ を含むため他生成無し)
+          - 入力: "alice@example.com" domain=EXAMPLE
+              → [ ("UPN(as-is)", "alice@example.com", None) ]
+          - 入力: "alice" domain=EXAMPLE upn_suffix=None
+              → [ ("NTLM(domain)", "EXAMPLE\\alice", 'NTLM') ]  (domain にドット無く UPN 構築不可)
+          - 入力: "alice" domain=example upn_suffix=example.local
+              → [ ("NTLM(domain)", "example\\alice", 'NTLM'), 
+                  ("UPN(constructed)", "alice@example.local", None) ]
+          - 入力: "alice" domain=corp.example.com upn_suffix=None
+              → [ ("NTLM(domain)", "corp.example.com\\alice", 'NTLM'),
+                  ("UPN(constructed)", "alice@corp.example.com", None) ]
+          - 入力: "alice" domain="" upn_suffix=example.com
+              → [ ("UPN(constructed)", "alice@example.com", None) ]
+
+        戻り値: 各要素 (label:説明, user:bindユーザー文字列, auth_kind:'NTLM' or None)
+        """
         original = username
         yielded = set()
         def push(item):
@@ -437,7 +500,10 @@ class WindowsLDAPBackend(ModelBackend):
             if ' ' in display_name:
                 first_name, last_name = display_name.split(' ', 1)
             email_attr = str(getattr(entry, 'mail', '') or f"{username}@{(upn_suffix or domain or 'local')}")
-            user = UserModel.objects.create_user(
+            # Django の UserManager (BaseUserManager) には create_user が定義されているが
+            # 型チェッカがカスタムユーザ経由で解決できず警告を出すケースがあるため明示的に cast。
+            manager = cast(Any, UserModel.objects)
+            user = manager.create_user(  # type: ignore[attr-defined]
                 username=username,
                 email=email_attr,
                 first_name=first_name,
@@ -448,33 +514,32 @@ class WindowsLDAPBackend(ModelBackend):
             return user
 
     def _sync_profile_from_ldap(self, user, entry):
-        """UserProfile があれば LDAP 属性差分を同期 (存在しなくても失敗しない)."""
+        """カスタムUserへ LDAP 属性差分を同期 (失敗しても例外抑止)."""
         try:
-            from .models import UserProfile, UserSource  # 遅延 import
-            profile, _ = UserProfile.objects.get_or_create(user=user)
-            # LDAP経由でログインできた時点で出所をLDAPに設定
-            if profile.source != UserSource.LDAP:
-                profile.source = UserSource.LDAP
+            from .models import UserSource  # 遅延 import
             from django.utils import timezone
             new_dn = str(getattr(entry, 'distinguishedName', '') or '')
             new_dept = str(getattr(entry, 'department', '') or '')
             new_title = str(getattr(entry, 'title', '') or '')
             changed = []
-            if profile.ldap_dn != new_dn:
+            if user.source != UserSource.LDAP:
+                user.source = UserSource.LDAP
+                changed.append('source')
+            if user.ldap_dn != new_dn:
+                user.ldap_dn = new_dn
                 changed.append('ldap_dn')
-                profile.ldap_dn = new_dn
-            if profile.department_name != new_dept:
+            if user.department_name != new_dept:
+                user.department_name = new_dept
                 changed.append('department_name')
-                profile.department_name = new_dept
-            if profile.title != new_title:
+            if user.title != new_title:
+                user.title = new_title
                 changed.append('title')
-                profile.title = new_title
-            profile.last_synced_at = timezone.now()
-            profile.save()
+            user.last_synced_at = timezone.now()
             if changed:
-                logger.info("LDAP profile fields changed | user=%s changed=%s", user.username, ','.join(changed))
+                user.save(update_fields=list(set(changed + ['last_synced_at'])))
+                logger.info("LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed))
         except Exception:  # noqa: BLE001
-            logger.debug("UserProfile 更新をスキップ (存在しない/エラー)")
+            logger.debug("User LDAPフィールド同期失敗をスキップ")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
         """全候補失敗時に試行概要と各試行詳細を詳細ログ出力."""
