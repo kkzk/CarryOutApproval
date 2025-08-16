@@ -12,8 +12,8 @@
 使い方:
   uv run python manage_vendor_assets.py              # 初回 / 追加
   uv run python manage_vendor_assets.py --force      # 再取得
-    uv run python manage_vendor_assets.py --verify     # ハッシュ表示のみ
-    uv run python manage_vendor_assets.py --extract-only  # 既存ダウンロードを再展開（オフライン対応）
+  uv run python manage_vendor_assets.py --verify     # ハッシュ表示のみ
+  uv run python manage_vendor_assets.py --extract-only  # 既存ダウンロードを再展開（オフライン対応）
 
 設定ファイル: vendor_assets.json
 """
