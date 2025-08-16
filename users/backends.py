@@ -112,13 +112,17 @@ class WindowsLDAPBackend(ModelBackend):
             "Local-first precheck | user=%s exists=%s prefixes=%s", username, local_user is not None, prefixes
         )
         if local_user is not None and prefixes:
+            # UserModel が確実に source フィールドを持つ前提で簡潔化
+            from .models import UserSource  # 循環発生しない前提 (必要なら遅延のままでも可)
             try:
-                from .models import UserSource  # 遅延 import
-                user_source = getattr(local_user, 'source', None)
-                is_ldap_user = (user_source == getattr(UserSource, 'LDAP', None))
-            except Exception:
+                user_source = local_user.source  # type: ignore[attr-defined]
+            except AttributeError:
+                # 想定外: マイグレーション未適用など。安全側へ倒しつつ警告。
+                dbg_logger.warning("User has no 'source' attribute (treat as LDAP) | user=%s", username)
                 user_source = 'UNKNOWN'
-                is_ldap_user = True  # 判定不能時は安全側 (local-first 不可)
+                is_ldap_user = True
+            else:
+                is_ldap_user = (user_source == UserSource.LDAP)
             dbg_logger.debug(
                 "Local-first user info | user=%s source=%s is_ldap_user=%s usable=%s", 
                 username, user_source, is_ldap_user, local_user.has_usable_password()
