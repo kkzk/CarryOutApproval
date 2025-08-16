@@ -204,6 +204,14 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
 ]
 
+# ローカル認証を LDAP より先に試すユーザ名パターン (正規表現) ※本番では空リスト推奨
+# デフォルトで Django 標準 'admin' と、開発用に 'local_*', 'dev_*' を許可
+AUTH_LOCAL_FIRST_PATTERNS = [
+    r'^admin$',
+    r'^local_.*$',
+    r'^dev_.*$',
+]
+
 # Logging settings for LDAP debugging
 LOGGING = {
     'version': 1,

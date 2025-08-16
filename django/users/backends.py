@@ -27,6 +27,7 @@ from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.conf import settings
 import logging
+import re
 from urllib.parse import urlparse
 from typing import List, Tuple, Optional, Iterable, Any, cast
 from dataclasses import dataclass
@@ -77,31 +78,64 @@ class WindowsLDAPBackend(ModelBackend):
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        """Django 標準 authenticate 入口: まずローカルパスワードを試し未命中なら LDAP."""
+        """認証フロー (現行ポリシー要約)
+
+        ゴール:
+          - 開発/試験用の明示パターンに合致する `username` は LDAP 問い合わせ不要。
+
+        手順:
+          A. username/password 無し → None
+          B. ローカルユーザ取得
+          C. パターン & 非LDAP ならローカルPW先行 (成功で return)
+          D. LDAP 認証 (成功で return)
+          E. 失敗: メッセージ付与し None
+
+        セキュリティ:
+          - source==LDAP は常に AD でのみ検証
+          - パターンは本番で空リスト運用
+        """
+        # (A) username/password 無し → None
         if not username or not password:
             return None
+
+        # (B) ローカルユーザ取得
         UserModel = get_user_model()
         try:
-            user = UserModel.objects.get(username=username)
-            if user.check_password(password):
-                return user
+            local_user = UserModel.objects.get(username=username)
         except UserModel.DoesNotExist:
-            pass
-        
-        # LDAPで認証を試みる
+            local_user = None
+
+        # (C) local-first: パターン & 非LDAPユーザ
+        patterns = getattr(settings, 'AUTH_LOCAL_FIRST_PATTERNS', []) or []
+        if local_user is not None and patterns:
+            try:
+                from .models import UserSource  # 遅延 import
+                is_ldap_user = (getattr(local_user, 'source', None) == getattr(UserSource, 'LDAP', None))
+            except Exception:
+                is_ldap_user = True  # 判定不能時は安全側 (local-first 不可)
+            if not is_ldap_user:
+                for p in patterns:
+                    try:
+                        if re.match(p, username) and local_user.check_password(password):
+                            logger.info("Local-first auth success | user=%s pattern=%s", username, p)
+                            return local_user
+                    except re.error:
+                        logger.warning("Invalid regex in AUTH_LOCAL_FIRST_PATTERNS | pattern=%s", p)
+
+        # (D) LDAP 認証
         user, auth_result = self._authenticate_ldap3(username, password)
-        
-        # 認証失敗の場合は Django messages フレームワークへ分類済みメッセージを投入
-        if request and not user and auth_result:
+        if user is not None:
+            return user
+
+        # (E) 失敗時メッセージ
+        if request and auth_result:
             try:
                 messages.error(request, auth_result)
-            except Exception:  # フォールバック (テストや一部非標準環境)
-                # requestオブジェクトに暫定保持 (型チェッカ警告回避のため _ 属性名)
+            except Exception:  # 非標準環境フォールバック
                 existing = getattr(request, '_auth_error_messages', [])
                 existing.append(auth_result)
                 setattr(request, '_auth_error_messages', existing)
-            
-        return user
+        return None
 
     def _authenticate_ldap3(self, username, password):
         """利用者資格情報で AD (LDAP) に直接バインドして認証するメインフロー。
