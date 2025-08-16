@@ -205,25 +205,33 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
-# ローカル認証を LDAP より先に試すユーザ名パターン (正規表現) ※本番では空リスト推奨
-# .env 例 (セミコロン区切り):
-#   AUTH_LOCAL_FIRST_PATTERNS=^admin$;^local_.*$;^dev_.*$
-# 2つだけなら:
-#   AUTH_LOCAL_FIRST_PATTERNS=^foo$;^bar_.*$
-# 空または未設定ならデフォルト (admin/local_/dev_) を採用。
-# AUTH_LOCAL_FIRST_PATTERNS: .env からパターンを読み込み (セミコロン/カンマ区切り両対応)
-_auth_local_first_raw = config('AUTH_LOCAL_FIRST_PATTERNS', default='')  # decouple 経由で .env 読み込み
-if isinstance(_auth_local_first_raw, bool):  # 想定外 (真偽値) を文字列化
-    _auth_local_first_raw = ''
-if _auth_local_first_raw:
-    normalized = str(_auth_local_first_raw).replace(';', ',')
-    AUTH_LOCAL_FIRST_PATTERNS = [p.strip() for p in normalized.split(',') if p.strip()]
-else:
-    AUTH_LOCAL_FIRST_PATTERNS = [r'^admin$', r'^local_.*$', r'^dev_.*$']
+"""Local-first 認証プレフィックス設定.
 
-# 起動時に patterns を一度ログ (DEBUG) に表示 (トラブルシュート用)
+目的:
+    開発/検証環境で一部ユーザ (admin / local_ / dev_) を LDAP より先にローカル PW で照合し
+    LDAP 接続を避ける (速度・検証容易性)。
+
+方針 (簡素化):
+    - 正規表現を廃止しシンプルな先頭一致 (str.startswith) のみ
+    - 本番では空リスト (機能無効) を強制的に維持
+    - 変更はコード履歴に残す (.env 非依存)
+
+編集ガイド: DEBUG=True ブロックのリストに prefix を追加する。
+"""
 import logging as _logging
-_logging.getLogger('users.backends').debug('Loaded AUTH_LOCAL_FIRST_PATTERNS raw=%r parsed=%r', _auth_local_first_raw, AUTH_LOCAL_FIRST_PATTERNS)
+
+if DEBUG:  # 開発/検証用デフォルト
+        AUTH_LOCAL_FIRST_PREFIXES: list[str] = [
+                'admin',   # 完全一致 'admin' も startswith('admin') でマッチ
+                'local_',
+                'dev_',
+        ]
+else:  # 本番/ステージング等: 無効
+        AUTH_LOCAL_FIRST_PREFIXES: list[str] = []
+
+_logging.getLogger('users.backends').debug(
+        'AUTH_LOCAL_FIRST_PREFIXES = %s', AUTH_LOCAL_FIRST_PREFIXES
+)
 
 # Logging settings for LDAP debugging
 LOGGING = {

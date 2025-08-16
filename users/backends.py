@@ -107,11 +107,11 @@ class WindowsLDAPBackend(ModelBackend):
             local_user = None
 
         # (C) local-first: パターン & 非LDAPユーザ
-        patterns = getattr(settings, 'AUTH_LOCAL_FIRST_PATTERNS', []) or []
+        prefixes = getattr(settings, 'AUTH_LOCAL_FIRST_PREFIXES', []) or []  # list[str]
         dbg_logger.debug(
-            "Local-first precheck | user=%s exists=%s patterns=%s", username, local_user is not None, patterns
+            "Local-first precheck | user=%s exists=%s prefixes=%s", username, local_user is not None, prefixes
         )
-        if local_user is not None and patterns:
+        if local_user is not None and prefixes:
             try:
                 from .models import UserSource  # 遅延 import
                 user_source = getattr(local_user, 'source', None)
@@ -124,21 +124,14 @@ class WindowsLDAPBackend(ModelBackend):
                 username, user_source, is_ldap_user, local_user.has_usable_password()
             )
             if not is_ldap_user:
-                matched_any = False
-                for p in patterns:
-                    try:
-                        if re.match(p, username):
-                            dbg_logger.debug("Local-first pattern matched | user=%s pattern=%s", username, p)
-                            matched_any = True
-                            if local_user.check_password(password):
-                                logger.info("Local-first auth success | user=%s pattern=%s", username, p)
-                                return local_user
-                            else:
-                                dbg_logger.debug("Local-first password mismatch | user=%s pattern=%s", username, p)
-                    except re.error:
-                        logger.warning("Invalid regex in AUTH_LOCAL_FIRST_PATTERNS | pattern=%s", p)
-                if matched_any:
-                    dbg_logger.debug("Local-first patterns matched but password failed or unusable | user=%s", username)
+                matched = any(username.startswith(p) for p in prefixes)
+                if matched:
+                    dbg_logger.debug("Local-first prefix matched | user=%s prefixes=%s", username, prefixes)
+                    if local_user.check_password(password):
+                        logger.info("Local-first auth success | user=%s", username)
+                        return local_user
+                    else:
+                        dbg_logger.debug("Local-first password mismatch | user=%s", username)
             else:
                 dbg_logger.debug("Local-first skipped (LDAP sourced user) | user=%s", username)
 
