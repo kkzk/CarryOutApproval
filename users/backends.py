@@ -540,7 +540,6 @@ class WindowsLDAPBackend(ModelBackend):
             from django.utils import timezone
             new_dn = str(getattr(entry, 'distinguishedName', '') or '')
             new_dept = str(getattr(entry, 'department', '') or '')
-            new_title = str(getattr(entry, 'title', '') or '')
             changed = []
             if user.source != UserSource.LDAP:
                 user.source = UserSource.LDAP
@@ -548,12 +547,7 @@ class WindowsLDAPBackend(ModelBackend):
             if user.ldap_dn != new_dn:
                 user.ldap_dn = new_dn
                 changed.append('ldap_dn')
-            if user.department_name != new_dept:
-                user.department_name = new_dept
-                changed.append('department_name')
-            if user.title != new_title:
-                user.title = new_title
-                changed.append('title')
+            # department_name/title フィールドは廃止。department_code は別途管理者が調整。
             user.last_synced_at = timezone.now()
             if changed:
                 user.save(update_fields=list(set(changed + ['last_synced_at'])))

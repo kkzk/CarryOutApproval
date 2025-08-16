@@ -21,9 +21,8 @@ https://docs.djangoproject.com/ja/5.2/ref/contrib/auth/#django.contrib.auth.mode
   - user: User への OneToOneField
   - source: ユーザーの出所（local/ldap）
   - ldap_dn: LDAP Distinguished Name
-  - department_code: 所属コード
-  - department_name: 所属名
-  - title: 役職
+    - department_code: 所属コード
+    - parent_department_code: 上位所属コード (手動設定)
   - last_synced_at: LDAP最終同期時刻
 
 ### シグナルによる自動生成
@@ -49,9 +48,8 @@ erDiagram
         int user_id FK, UNIQUE
         string source
         string ldap_dn
-        string department_code
-        string department_name
-        string title
+    string department_code
+    string parent_department_code
         datetime last_synced_at
     }
 
@@ -73,8 +71,7 @@ class UserProfile(models.Model):
     source = models.CharField(max_length=20, choices=UserSource.choices, default=UserSource.LOCAL)
     ldap_dn = models.TextField(blank=True)
     department_code = models.CharField(max_length=20, blank=True)
-    department_name = models.CharField(max_length=100, blank=True)
-    title = models.CharField(max_length=100, blank=True)
+    parent_department_code = models.CharField(max_length=20, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
 ```
 

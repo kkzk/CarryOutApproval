@@ -16,8 +16,7 @@ class Command(BaseCommand):
                 'last_name': '',
                 'email': 'admin@example.com',
                 'department_code': '',
-                'department_name': '',
-                'title': '管理者',
+                'parent_department_code': 'PARENT-ROOT',  # 仮の上位所属コード
                 'is_staff': True,
                 'is_superuser': True,
             },
@@ -28,8 +27,7 @@ class Command(BaseCommand):
                 'last_name': '田中',
                 'email': 'tanaka@example.com',
                 'department_code': 'DEPT1000100',
-                'department_name': 'DEPT1000100',
-                'title': '一般ユーザー',
+                'parent_department_code': 'DEPT1000',  # 仮
             },
             {
                 'username': 'user002',
@@ -38,8 +36,7 @@ class Command(BaseCommand):
                 'last_name': '佐藤',
                 'email': 'sato@example.com',
                 'department_code': 'DEPT1000100',
-                'department_name': 'DEPT1000100',
-                'title': '一般ユーザー',
+                'parent_department_code': 'DEPT1000',  # 仮
             },
             {
                 'username': 'user003',
@@ -48,8 +45,7 @@ class Command(BaseCommand):
                 'last_name': '鈴木',
                 'email': 'suzuki@example.com',
                 'department_code': 'DEPT1000',
-                'department_name': 'DEPT1000',
-                'title': '上位ユーザー',
+                'parent_department_code': 'PARENT-ROOT',  # 仮
             },
         ]
 
@@ -71,14 +67,13 @@ class Command(BaseCommand):
                 last_name=user_data.get('last_name', ''),
                 email=user_data.get('email', ''),
                 department_code=user_data.get('department_code', ''),
-                department_name=user_data.get('department_name', ''),
-                title=user_data.get('title', ''),
+                parent_department_code=user_data.get('parent_department_code', ''),
             )
             user.set_password(password)
             if is_staff:
-                user.is_staff = True
+                user.is_staff = True  # type: ignore[attr-defined]
             if is_superuser:
-                user.is_superuser = True
+                user.is_superuser = True  # type: ignore[attr-defined]
             user.save()
 
             self.stdout.write(
