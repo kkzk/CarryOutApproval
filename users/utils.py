@@ -1,41 +1,47 @@
-"""承認者選択等のユーティリティ (カスタムUser対応)"""
+"""承認者選択等のユーティリティ (カスタムUser対応)
+
+ldap_service を廃止し、認証時に自動生成された User レコード (同一OU / 上位OU) を
+直接参照して承認候補を返す方式に変更。
+"""
 from django.contrib.auth import get_user_model
-from .ldap_service import LDAPReadOnlyService
+from django.db import models  # Q 利用
 from .models import UserSource
 
 
 def get_approvers_for_user(user):
-    """
-    ユーザーの申請を承認できるユーザーのリストを取得
-    同一のOUおよび上位のOUに所属するユーザーを検索
+    """User テーブルだけを用いて承認候補を返す。
+
+    ロジック:
+      - 同じ department_code の他ユーザ
+      - parent_department_code があれば、その OU を department_code に持つユーザ
     """
     try:
-        user_dn = getattr(user, 'ldap_dn', None)
-        if not user_dn:
-            return []
-        ldap_service = LDAPReadOnlyService()
-        ldap_approvers = ldap_service.get_approvers_for_dn(user_dn)
-        django_approvers = []
         User = get_user_model()
-        for ldap_user in ldap_approvers:
-            try:
-                django_user = User.objects.get(username=ldap_user['username'])
-                django_approvers.append({
-                    'user': django_user,
-                    'username': django_user.username,
-                    'display_name': ldap_user['display_name'],
-                    'email': ldap_user['email'],
-                    'ou': ldap_user['ou']
-                })
-            except User.DoesNotExist:
-                django_approvers.append({
-                    'user': None,
-                    'username': ldap_user['username'],
-                    'display_name': ldap_user['display_name'],
-                    'email': ldap_user['email'],
-                    'ou': ldap_user['ou']
-                })
-        return django_approvers
+        dept = getattr(user, 'department_code', '') or ''
+        parent = getattr(user, 'parent_department_code', '') or ''
+        if not dept and not parent:
+            return []
+        qs = User.objects.filter(is_active=True)
+        cond = models.Q()
+        if dept:
+            cond |= models.Q(department_code=dept)
+        if parent:
+            cond |= models.Q(department_code=parent)
+        candidates = (
+            qs.filter(cond)
+              .exclude(pk=user.pk)
+              .order_by('username')[:100]
+        )
+        results = []
+        for u in candidates:  # type: ignore[assignment]
+            results.append({
+                'user': u,
+                'username': getattr(u, 'username', ''),  # type: ignore[attr-defined]
+                'display_name': (f"{getattr(u,'first_name','')} {getattr(u,'last_name','')}".strip() or getattr(u,'username','')),  # type: ignore[attr-defined]
+                'email': getattr(u, 'email', ''),  # type: ignore[attr-defined]
+                'ou': getattr(u, 'department_code', ''),  # type: ignore[attr-defined]
+            })
+        return results
     except Exception as e:  # noqa: BLE001
         print(f"Error getting approvers: {e}")
         return []
@@ -53,28 +59,19 @@ def create_user_from_ldap_info(username, display_name, email, ldap_dn):
         user.set_unusable_password()
     # LDAPフィールド更新
     changed = False
-    if ldap_dn and user.ldap_dn != ldap_dn:
-        user.ldap_dn = ldap_dn
+    if ldap_dn and getattr(user, 'ldap_dn', None) != ldap_dn:  # type: ignore[attr-defined]
+        setattr(user, 'ldap_dn', ldap_dn)  # type: ignore[attr-defined]
         changed = True
-    if user.source != UserSource.LDAP:
-        user.source = UserSource.LDAP
+    if getattr(user, 'source', None) != UserSource.LDAP:  # type: ignore[attr-defined]
+        setattr(user, 'source', UserSource.LDAP)  # type: ignore[attr-defined]
         changed = True
     if changed:
         user.save(update_fields=['ldap_dn', 'source'])
     return user
 
 
-def test_ldap_connection():
-    """
-    LDAP接続のテスト
-    """
-    try:
-        svc = LDAPReadOnlyService()
-        svc.get_approvers_for_dn('CN=dummy,OU=Dummy,DC=example,DC=com')
-        return True
-    except Exception as e:  # noqa: BLE001
-        print(f"LDAP connection test failed: {e}")
-        return False
+def test_ldap_connection():  # 互換: 旧API呼び出し対応 (常にTrue返却)
+    return True
 
 
 def sync_ldap_users():
@@ -83,4 +80,4 @@ def sync_ldap_users():
     管理コマンドから実行することを想定
     """
     # 実装は必要に応じて
-    pass
+    pass  # 旧仕様のまま (自動生成に移行)

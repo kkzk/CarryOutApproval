@@ -266,6 +266,8 @@ class WindowsLDAPBackend(ModelBackend):
             
             user = self._ensure_local_user(username, entry, cfg.upn_suffix, cfg.domain)
             self._sync_profile_from_ldap(user, entry)
+            # 同一 OU / 親 OU の関連ユーザを M2M なしでローカル User として確保
+            self._provision_related_users(conn, entry, user, cfg, username)
             conn.unbind()
             logger.info(
                 "LDAP auth success | user=%s attempt=%s bind_user=%s host=%s",
@@ -534,26 +536,134 @@ class WindowsLDAPBackend(ModelBackend):
             return user
 
     def _sync_profile_from_ldap(self, user, entry):
-        """カスタムUserへ LDAP 属性差分を同期 (失敗しても例外抑止)."""
+        """LDAP 属性差分を同期し、DN から OU コードを自動抽出 (失敗しても例外抑止).
+
+        要件対応:
+          1. DN 最下層 OU (ユーザ直下) を所属コード (department_code) として保存
+          2. その 1 階層上の OU を parent_department_code として保存
+          (従来手動だった parent_department_code を自動化 / OU が不足する場合は空のまま)
+        """
         try:
             from .models import UserSource  # 遅延 import
             from django.utils import timezone
             new_dn = str(getattr(entry, 'distinguishedName', '') or '')
-            new_dept = str(getattr(entry, 'department', '') or '')
-            changed = []
+            changed: list[str] = []
+
             if user.source != UserSource.LDAP:
                 user.source = UserSource.LDAP
                 changed.append('source')
-            if user.ldap_dn != new_dn:
+            if new_dn and user.ldap_dn != new_dn:
                 user.ldap_dn = new_dn
                 changed.append('ldap_dn')
-            # department_name/title フィールドは廃止。department_code は別途管理者が調整。
+
+            # DN 解析: "CN=...,OU=Child,OU=Parent,DC=example,DC=com"
+            def extract_ou_levels(dn: str) -> tuple[str, str]:
+                try:
+                    parts = [p.strip() for p in dn.split(',') if p]
+                    # 最初に出現する OU= が最下層 (ユーザーに最も近い OU)
+                    first_ou_index = None
+                    for i, p in enumerate(parts):
+                        if p.upper().startswith('OU='):
+                            first_ou_index = i
+                            break
+                    if first_ou_index is None:
+                        return '', ''
+                    # same level OU 名
+                    same_ou_name = parts[first_ou_index][3:]
+                    # 1 階層上 OU 名 (連続して OU= が続く場合のみ)
+                    upper_ou_name = ''
+                    if first_ou_index + 1 < len(parts) and parts[first_ou_index + 1].upper().startswith('OU='):
+                        upper_ou_name = parts[first_ou_index + 1][3:]
+                    return same_ou_name, upper_ou_name
+                except Exception:  # noqa: BLE001
+                    return '', ''
+
+            same_ou_name, upper_ou_name = extract_ou_levels(new_dn)
+            if same_ou_name and user.department_code != same_ou_name:
+                user.department_code = same_ou_name
+                changed.append('department_code')
+            if upper_ou_name and user.parent_department_code != upper_ou_name:
+                user.parent_department_code = upper_ou_name
+                changed.append('parent_department_code')
+
             user.last_synced_at = timezone.now()
             if changed:
                 user.save(update_fields=list(set(changed + ['last_synced_at'])))
-                logger.info("LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed))
+                logger.info(
+                    "LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed)
+                )
         except Exception:  # noqa: BLE001
             logger.debug("User LDAPフィールド同期失敗をスキップ")
+
+    def _provision_related_users(self, conn, primary_entry, primary_user, cfg, current_username):
+        """同一 OU / 1階層上 OU の LDAP ユーザを検索しローカル User を必要に応じて生成。
+
+        モデル変更なしで後続の承認者選択候補を増やす目的。
+        再帰なし / 1階層のみ。
+        """
+        try:
+            dn = str(getattr(primary_entry, 'distinguishedName', '') or '')
+            if not dn:
+                return
+            parts = [p.strip() for p in dn.split(',') if p.strip()]
+            first_ou_idx = None
+            for i, p in enumerate(parts):
+                if p.upper().startswith('OU='):
+                    first_ou_idx = i
+                    break
+            if first_ou_idx is None:
+                return
+            same_ou_base = ','.join(parts[first_ou_idx:])  # OU=Child,OU=Parent,...
+            parent_ou_base = ''
+            if first_ou_idx + 1 < len(parts) and parts[first_ou_idx + 1].upper().startswith('OU='):
+                parent_ou_base = ','.join(parts[first_ou_idx + 1:])
+
+            from ldap3 import SUBTREE
+            # 検索共通定義
+            related_specs = [("same", same_ou_base), ("upper", parent_ou_base)]
+            for kind, base in related_specs:
+                if not base or 'OU=' not in base:
+                    continue
+                try:
+                    # 性能抑制: サイズ制限 (必要なら設定化) 50 ユーザまで
+                    if not conn.search(
+                        search_base=base,
+                        search_filter='(sAMAccountName=*)',
+                        search_scope=SUBTREE,
+                        attributes=['sAMAccountName', 'displayName', 'mail', 'distinguishedName', 'givenName', 'sn'],
+                        size_limit=50,
+                    ):
+                        continue
+                except Exception:  # noqa: BLE001
+                    continue
+                entries = getattr(conn, 'entries', [])
+                if not entries:
+                    continue
+                UserModel = get_user_model()
+                created = 0
+                for e in entries:
+                    try:
+                        uname = str(getattr(e, 'sAMAccountName', '') or '')
+                        if not uname or uname.lower() == current_username.lower():
+                            continue
+                        if UserModel.objects.filter(username=uname).exists():
+                            # 既存ユーザも DN 情報があれば同期
+                            u = UserModel.objects.get(username=uname)
+                            self._sync_profile_from_ldap(u, e)
+                            continue
+                        # 新規作成 → 最低限フィールド埋める
+                        u = self._ensure_local_user(uname, e, cfg.upn_suffix, cfg.domain)
+                        self._sync_profile_from_ldap(u, e)
+                        created += 1
+                    except Exception:  # noqa: BLE001
+                        continue
+                if created:
+                    logger.info(
+                        "LDAP related users provisioned | user=%s kind=%s created=%d base=%s", \
+                        current_username, kind, created, base
+                    )
+        except Exception:  # noqa: BLE001
+            logger.debug("関連ユーザ自動生成をスキップ (例外発生)")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
         """全候補失敗時に試行概要と各試行詳細を詳細ログ出力."""
