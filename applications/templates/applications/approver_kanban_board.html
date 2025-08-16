@@ -15,10 +15,10 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h2>
-                        <i class="bi bi-kanban"></i> 
-                        承認管理ボード
+                    <h2 class="d-inline-block">
+                        <i class="bi bi-kanban"></i> 承認管理ボード
                         <small class="text-muted fs-6">（承認者として）</small>
+                        {% include 'partials/ws_status.html' %}
                     </h2>
                     <small class="text-info">
                         <i class="bi bi-arrow-left-right me-1"></i>
@@ -129,69 +129,10 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="{% static 'applications/js/kanban.js' %}"></script>
 <script>
-// WebSocket接続状態をユーザーに表示
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('承認者カンバンボード: DOMContentLoaded');
-    console.log('Sortable.js バージョン:', typeof Sortable !== 'undefined' ? 'OK' : 'NG');
-    
-    // 接続状態インジケーターを追加
-    const indicator = document.createElement('div');
-    indicator.id = 'ws-indicator';
-    indicator.className = 'position-fixed top-0 start-0 m-3 p-2 rounded bg-secondary text-white small';
-    indicator.style.zIndex = '1060';
-    indicator.innerHTML = '<i class="bi bi-circle-fill text-warning"></i> 接続中...';
-    document.body.appendChild(indicator);
-    
-    // WebSocket接続状態の更新
-    const originalOnOpen = websocket?.onopen;
-    const originalOnClose = websocket?.onclose;
-    
-    if (websocket) {
-        websocket.addEventListener('open', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-success"></i> リアルタイム更新: ON';
-        });
-        
-        websocket.addEventListener('close', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> リアルタイム更新: OFF';
-        });
-        
-        websocket.addEventListener('error', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> 接続エラー';
-        });
+    if (window.websocket && window.bindWsStatus) {
+        bindWsStatus(window.websocket);
     }
-    
-    // 5秒後にインジケーターを透明にする
-    setTimeout(() => {
-        indicator.style.opacity = '0.7';
-    }, 5000);
-    
-    // デバッグ用：Sortableインスタンス確認
-    setTimeout(() => {
-        const columns = document.querySelectorAll('.kanban-body');
-        console.log('カンバンカラム数:', columns.length);
-        
-        columns.forEach((column, index) => {
-            const sortableInstance = Sortable.get(column);
-            const cards = column.querySelectorAll('.application-card');
-            
-            console.log(`カラム${index + 1}:`, {
-                element: column.id,
-                hasSortable: !!sortableInstance,
-                disabled: sortableInstance ? sortableInstance.option('disabled') : 'N/A',
-                cardCount: cards.length
-            });
-            
-            // カードのスタイルとドラッグ可能性をチェック
-            cards.forEach((card, cardIndex) => {
-                console.log(`  カード${cardIndex + 1}:`, {
-                    id: card.dataset.id,
-                    status: card.dataset.status,
-                    cursor: window.getComputedStyle(card).cursor,
-                    draggable: card.draggable
-                });
-            });
-        });
-    }, 1000);
 });
 </script>
 {% endblock %}

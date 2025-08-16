@@ -14,10 +14,10 @@
     <div class="row mb-4">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
-                <h2>
-                    <i class="bi bi-kanban"></i> 
-                    申請状況ボード
+                <h2 class="d-inline-block">
+                    <i class="bi bi-kanban"></i> 申請状況ボード
                     <small class="text-muted fs-6">（申請者として）</small>
+                    {% include 'partials/ws_status.html' %}
                 </h2>
                 <div>
                     <a href="{% url 'applications:create-application' %}" class="btn btn-primary">
@@ -128,41 +128,14 @@
 <script>
 // 申請者用カンバンボードのWebSocket設定
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('申請者カンバンボード: DOMContentLoaded');
-    console.log('Sortable.js バージョン:', typeof Sortable !== 'undefined' ? 'OK' : 'NG');
-    
     // ブラウザ通知の許可を要求
     if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission();
     }
-    
-    // 接続状態インジケーターを追加
-    const indicator = document.createElement('div');
-    indicator.id = 'ws-indicator';
-    indicator.className = 'position-fixed top-0 start-0 m-3 p-2 rounded bg-secondary text-white small';
-    indicator.style.zIndex = '1060';
-    indicator.innerHTML = '<i class="bi bi-circle-fill text-warning"></i> 接続中...';
-    document.body.appendChild(indicator);
-    
-    // WebSocket接続状態の更新（申請者向けメッセージ）
-    if (websocket) {
-        websocket.addEventListener('open', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-success"></i> リアルタイム更新: ON';
-        });
-        
-        websocket.addEventListener('close', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> リアルタイム更新: OFF';
-        });
-        
-        websocket.addEventListener('error', function() {
-            indicator.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> 接続エラー';
-        });
+
+    if (window.websocket && window.bindWsStatus) {
+        bindWsStatus(window.websocket);
     }
-    
-    // 5秒後にインジケーターを透明にする
-    setTimeout(() => {
-        indicator.style.opacity = '0.7';
-    }, 5000);
     
     // 申請者向けのカスタムメッセージハンドラー
     const originalHandleKanbanUpdate = window.handleKanbanUpdate;

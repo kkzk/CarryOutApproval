@@ -165,6 +165,13 @@
             opacity: 1;
             pointer-events: all;
         }
+    /* WebSocketステータスドット */
+    .ws-status-dot { width:12px; height:12px; display:inline-block; border-radius:50%; vertical-align:middle; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
+    .ws-state-connecting { background:#ffc107; }
+    .ws-state-open { background:#28a745; }
+    .ws-state-closed { background:#6c757d; }
+    .ws-state-error { background:#dc3545; animation:ws-pulse 1s infinite; }
+    @keyframes ws-pulse { 0%{box-shadow:0 0 0 2px rgba(220,53,69,.5);} 50%{box-shadow:0 0 0 6px rgba(220,53,69,.1);} 100%{box-shadow:0 0 0 2px rgba(220,53,69,.5);} }
     </style>
 </head>
 <body>
@@ -353,6 +360,13 @@
             const sidebar = document.getElementById('sidebar');
             const mainContent = document.getElementById('mainContent');
             const messagesContainer = document.getElementById('messagesContainer');
+            // ツールチップ初期化（動的要素も再初期化可能）
+            const initTooltips = () => {
+                document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+                    if (!bootstrap.Tooltip.getInstance(el)) new bootstrap.Tooltip(el);
+                });
+            };
+            initTooltips();
             
             // ローカルストレージからサイドバー状態を読み込み
             const sidebarState = localStorage.getItem('sidebarState');
@@ -383,6 +397,25 @@
                     localStorage.setItem('sidebarState', isHidden ? 'hidden' : 'visible');
                 });
             }
+
+            // WebSocketステータスを指定のWebSocketインスタンスに紐づけ
+            window.bindWsStatus = function(ws) {
+                const dot = document.querySelector('.ws-status-dot');
+                if (!ws || !dot) return;
+                const setState = (state, title) => {
+                    dot.className = 'ws-status-dot ws-state-' + state;
+                    const wrapper = dot.parentElement;
+                    wrapper.setAttribute('data-bs-original-title', title);
+                    const tip = bootstrap.Tooltip.getInstance(wrapper);
+                    if (tip) tip.update();
+                };
+                setState('connecting','リアルタイム通信: 接続中');
+                ws.addEventListener('open', () => setState('open','リアルタイム通信: 接続中 (ON)'));
+                ws.addEventListener('close', () => setState('closed','リアルタイム通信: 切断 (OFF)'));
+                ws.addEventListener('error', () => setState('error','リアルタイム通信: エラー'));
+                if (ws.readyState === 1) setState('open','リアルタイム通信: 接続中 (ON)');
+                if (ws.readyState > 1) setState('closed','リアルタイム通信: 切断 (OFF)');
+            };
         });
     </script>
     
