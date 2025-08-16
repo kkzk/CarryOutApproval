@@ -73,27 +73,30 @@ class WindowsLDAPBackend(ModelBackend):
     """Windows対応 LDAP 認証バックエンド (ldap3)。
 
     ポリシー:
-      - 管理用固定サービスアカウントを持たず、利用者資格情報で直接バインド
-      - LDAPS / StartTLS を優先 (設定で明示無い場合は StartTLS を強制)
-      - バインド候補生成順: as-is(入力形式) > NTLM(domain\\user) > UPN(constructed)
+        - 管理用固定サービスアカウントを持たず、利用者資格情報で直接バインド
+        - LDAPS / StartTLS を優先 (設定で明示無い場合は StartTLS を強制)
+        - バインド候補生成順: as-is(入力形式) > NTLM(domain\\user) > UPN(constructed)
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        """認証フロー (現行ポリシー要約)
+        """認証フロー (現行ポリシー要約 / 仕様 v2)
 
         ゴール:
-          - 開発/試験用の明示パターンに合致する `username` は LDAP 問い合わせ不要。
+            - 非 LDAP ユーザ (source!=LDAP) はプレフィックス許可 & PW 一致時のみ成功し、失敗時は LDAP 試行なしで終了。
+            - LDAP ユーザ (source==LDAP) または未登録ユーザのみ LDAP に問い合わせ。
 
         手順:
-          A. username/password 無し → None
-          B. ローカルユーザ取得
-          C. パターン & 非LDAP ならローカルPW先行 (成功で return)
-          D. LDAP 認証 (成功で return)
-          E. 失敗: メッセージ付与し None
+            A. username/password 無し → None
+            B. ローカルユーザ取得
+            C. ローカルユーザ & source!=LDAP:
+                 C1. プレフィックス一致 & パスワード一致 → 成功
+                 C2. 上記以外 → 失敗 (LDAP へは行かない)
+            D. (未登録 or source==LDAP) → LDAP 認証
+            E. 失敗時: メッセージ付与し None
 
-        セキュリティ:
-          - source==LDAP は常に AD でのみ検証
-          - パターンは本番で空リスト運用
+        影響 (仕様v1との差分):
+            - v1 では非LDAPユーザのパスワード不一致時に LDAP へフォールバックする余地があったが排除。
+            - ローカル先取り後に LDAP アカウントが後から作成されても自動昇格しない (運用で変換が必要)。
         """
         # (A) username/password 無し → None
         if not username or not password:
@@ -111,31 +114,31 @@ class WindowsLDAPBackend(ModelBackend):
         dbg_logger.debug(
             "Local-first precheck | user=%s exists=%s prefixes=%s", username, local_user is not None, prefixes
         )
-        if local_user is not None and prefixes:
-            # UserModel が確実に source フィールドを持つ前提で簡潔化
-            from .models import UserSource  # 循環発生しない前提 (必要なら遅延のままでも可)
+        if local_user is not None:
+            from .models import UserSource
             try:
                 user_source = local_user.source  # type: ignore[attr-defined]
             except AttributeError:
-                # 想定外: マイグレーション未適用など。安全側へ倒しつつ警告。
                 dbg_logger.warning("User has no 'source' attribute (treat as LDAP) | user=%s", username)
                 user_source = 'UNKNOWN'
                 is_ldap_user = True
             else:
                 is_ldap_user = (user_source == UserSource.LDAP)
             dbg_logger.debug(
-                "Local-first user info | user=%s source=%s is_ldap_user=%s usable=%s", 
+                "Local-first user info | user=%s source=%s is_ldap_user=%s usable=%s",
                 username, user_source, is_ldap_user, local_user.has_usable_password()
             )
             if not is_ldap_user:
-                matched = any(username.startswith(p) for p in prefixes)
-                if matched:
-                    dbg_logger.debug("Local-first prefix matched | user=%s prefixes=%s", username, prefixes)
-                    if local_user.check_password(password):
-                        logger.info("Local-first auth success | user=%s", username)
-                        return local_user
-                    else:
-                        dbg_logger.debug("Local-first password mismatch | user=%s", username)
+                # 仕様変更: 非LDAPユーザは LDAP に問い合わせない。
+                if not (prefixes and any(username.startswith(p) for p in prefixes)):
+                    dbg_logger.debug("Non-LDAP user without allowed prefix -> auth fail (no LDAP query) | user=%s", username)
+                    return None
+                dbg_logger.debug("Local-first prefix matched | user=%s prefixes=%s", username, prefixes)
+                if local_user.check_password(password):
+                    logger.info("Local-first auth success | user=%s", username)
+                    return local_user
+                dbg_logger.debug("Local-first password mismatch (non-LDAP user, no LDAP fallback) | user=%s", username)
+                return None
             else:
                 dbg_logger.debug("Local-first skipped (LDAP sourced user) | user=%s", username)
 
