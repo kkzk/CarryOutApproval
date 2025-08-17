@@ -150,6 +150,12 @@
             .sidebar-toggle {
                 display: block;
             }
+            
+            /* モバイル表示時のサイドバー表示用クラス */
+            .sidebar-mobile-visible {
+                transform: translateX(0) !important;
+                box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            }
         }
         
         /* サイドバーが隠れているときのスタイル */
@@ -386,20 +392,51 @@
             // サイドバートグルボタンのイベントリスナー
             if (sidebarToggle && sidebar) {
                 sidebarToggle.addEventListener('click', function() {
-                    sidebar.classList.toggle('sidebar-hidden');
-                    mainContent.classList.toggle('content-with-sidebar');
-                    mainContent.classList.toggle('content-no-sidebar');
+                    // モバイル表示かどうかをチェック
+                    const isMobile = window.innerWidth <= 768;
                     
-                    if (messagesContainer) {
-                        messagesContainer.classList.toggle('content-with-sidebar');
-                        messagesContainer.classList.toggle('content-no-sidebar');
+                    if (isMobile) {
+                        // モバイル表示時は別のクラスでトグル
+                        sidebar.classList.toggle('sidebar-mobile-visible');
+                    } else {
+                        // 通常表示時は既存の処理
+                        sidebar.classList.toggle('sidebar-hidden');
+                        mainContent.classList.toggle('content-with-sidebar');
+                        mainContent.classList.toggle('content-no-sidebar');
+                        
+                        if (messagesContainer) {
+                            messagesContainer.classList.toggle('content-with-sidebar');
+                            messagesContainer.classList.toggle('content-no-sidebar');
+                        }
+                        
+                        // サイドバー状態をローカルストレージに保存
+                        const isHidden = sidebar.classList.contains('sidebar-hidden');
+                        localStorage.setItem('sidebarState', isHidden ? 'hidden' : 'visible');
                     }
-                    
-                    // サイドバー状態をローカルストレージに保存
-                    const isHidden = sidebar.classList.contains('sidebar-hidden');
-                    localStorage.setItem('sidebarState', isHidden ? 'hidden' : 'visible');
                 });
             }
+            
+            // ウィンドウリサイズ時の処理
+            window.addEventListener('resize', function() {
+                const isMobile = window.innerWidth <= 768;
+                
+                if (isMobile) {
+                    // モバイル表示に切り替わったときは、サイドバーを非表示にする
+                    // ただし、明示的に表示されている場合は維持
+                    if (!sidebar.classList.contains('sidebar-mobile-visible')) {
+                        sidebar.classList.remove('sidebar-mobile-visible');
+                    }
+                } else {
+                    // 通常表示に戻ったときは、保存された状態を反映
+                    sidebar.classList.remove('sidebar-mobile-visible');
+                    const sidebarState = localStorage.getItem('sidebarState');
+                    if (sidebarState === 'hidden') {
+                        sidebar.classList.add('sidebar-hidden');
+                    } else {
+                        sidebar.classList.remove('sidebar-hidden');
+                    }
+                }
+            });
         });
         </script>
         <!-- Custom JS -->
