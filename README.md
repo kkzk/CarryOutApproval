@@ -665,6 +665,47 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 - **Django統合**: 既存の認証システムとの自然な連携
 - **スケーラブル**: Redis によるチャンネルレイヤーでの水平拡張対応
 
+### Long Polling への段階的移行状況 (2025-08)
+
+本システムは当初 WebSocket + Redis (channels) + RQ による push 型更新でカンバン反映を行っていましたが、要件整理の結果「最終状態のみを最新化できれば UX を満たす」ことが判明したため、現在は Long Polling 方式へ段階的移行済みです。
+
+| 項目 | 状態 | 備考 |
+|------|------|------|
+| WebSocket カンバン更新 | 無効 (fallback クローズ) | `LONG_POLLING_ENABLED=True` 時 asgi で consumer 未登録 |
+| RQ 経由の送信タスク | no-op | `NotificationService` が early return |
+| Poll API (`/notifications/poll/kanban/`) | 稼働 | 差分: `updated_at` > since の Application 一括返却 |
+| WebSocket consumer / routing | 残置 (後方互換) | 今後削除予定 (最終確認後) |
+| channels / channels_redis 依存 | まだ残置 | 削除候補 (別ブランチで除去予定) |
+| redis / django_rq | まだ残置 | 他用途が無ければ削除可能 |
+
+#### Long Polling 仕様概要
+- クライアントは前回レスポンスの `latest` (ISO8601 UTC) を次回 `since` として送信
+- サーバは対象ユーザ (applicant / approver) 関連 `Application.updated_at` > since が出現するまで最長 25 秒待機 (1 秒間隔ポーリング)
+- 変更検知時: 変更分 (最大 50 件) を即時返却。なければタイムアウトで空配列
+- クライアントは受信ごとに DOM 差分適用 (既存 WebSocket 処理を再利用)
+
+#### 今後の削除予定ファイル (削除手順メモ)
+| ファイル | 役割 | 削除条件 |
+|----------|------|----------|
+| `notifications/consumers.py` | WebSocket consumer | 全ページで Long Polling 安定運用確認後 |
+| `notifications/routing.py` | WebSocket ルーティング | consumer 削除と同時 |
+| `notifications/tasks.py` | RQ 送信タスク | 他で RQ 未使用を確認後 |
+| `notifications/services.py` 内 WS 関連分岐 | push 不要化 | consumer 削除前に整理 |
+| `carry_out_approval/asgi.py` の fallback | 完全削除段階 | WS 需要無しを正式決定後 |
+| 依存: `channels`, `channels_redis`, `django_rq`, `redis` | requirements / pyproject から除去 | 上記コード削除後 CI グリーン確認 |
+
+#### 移行後の利点
+- インフラ依存 (Redis, 専用 ASGI サーバ設定) 削減による運用負荷軽減
+- 接続維持コスト (WebSocket keepalive) 不要
+- デバッグ容易: 通常の HTTP トレースのみで解析可能
+
+#### 留意点 / 今後の最適化
+- 同時多数ユーザ時の DB ポーリング負荷: 現状 1 秒間隔。バックオフ (指数 / ジッタ) 導入余地
+- レスポンス payload サイズ最適化: 専用軽量シリアライザ導入 (必要フィールド限定) を検討
+- 変更トリガーを pub/sub で持つ (将来再び push が必要になった場合に備えイベント抽象化)
+
+> NOTE: 現在 WebSocket へ接続した場合は即時正常コード (1000) でクローズする fallback 実装。クライアント側で未使用であればユーザ影響なし。
+
 #### Bootstrap 5の採用理由
 - **レスポンシブ対応**: モバイルファーストデザイン
 - **豊富なコンポーネント**: 迅速なUI開発
