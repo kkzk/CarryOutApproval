@@ -66,42 +66,18 @@ class NotificationService:
         )
     
     @staticmethod
-    def notify_new_application(application):
-        """新規申請の通知 (統一: action は常に application_state)"""
-        NotificationService.send_kanban_update_notification(
-            user=application.approver,
-            action='application_state',  # 旧: new_application
-            application=application
-        )
-    
-    @staticmethod
-    def notify_application_approved(application):
-        """申請承認の通知 (統一: action は常に application_state)"""
-        NotificationService.send_kanban_update_notification(
-            user=application.applicant,
-            action='application_state',  # 旧: application_approved
-            application=application
-        )
-    
-    @staticmethod
-    def notify_application_rejected(application):
-        """申請却下の通知 (統一: action は常に application_state)"""
-        NotificationService.send_kanban_update_notification(
-            user=application.applicant,
-            action='application_state',  # 旧: application_rejected
-            application=application
-        )
-
-    @staticmethod
     def broadcast_application_state(application):
-        """申請の現在状態を申請者・承認者双方にブロードキャスト"""
-        NotificationService.send_kanban_update_notification(
-            user=application.applicant,
-            action='application_state',  # 統一
-            application=application
-        )
-        NotificationService.send_kanban_update_notification(
-            user=application.approver,
-            action='application_state',  # 統一
-            application=application
-        )
+        """申請の現在状態を申請者・承認者双方にブロードキャスト (重複除去)
+
+        applicant と approver が同一ユーザ名の場合は 1 回のみ送信。
+        """
+        unique_usernames = []
+        for username in [application.applicant, application.approver]:
+            if username and username not in unique_usernames:
+                unique_usernames.append(username)
+        for username in unique_usernames:
+            NotificationService.send_kanban_update_notification(
+                user=username,
+                action='application_state',
+                application=application
+            )
