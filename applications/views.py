@@ -53,7 +53,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             action="create",
             details=f"申請を作成しました。ファイル: {application.original_filename}"
         )
-    # 通知は post_save シグナルで送信されるためここでは呼ばない（重複防止）
+    # 通知 (シグナル廃止に伴い直接呼び出し)
+    from notifications.services import NotificationService
     
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):
@@ -68,7 +69,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             old_status = application.status
             serializer.save()
-            # 通知は post_save シグナルで処理。ここでは監査ログのみ。
+            # 通知 (シグナル廃止に伴いここで送信)
+            from notifications.services import NotificationService
+            # 承認日時設定（以前はシグナルで実施）
+            if application.status == ApprovalStatus.APPROVED and application.approved_at is None:
+                application.approved_at = timezone.now()
+                application.save(update_fields=['approved_at'])
+            if application.status == ApprovalStatus.APPROVED:
+                NotificationService.notify_application_approved(application)
+            elif application.status == ApprovalStatus.REJECTED:
+                NotificationService.notify_application_rejected(application)
             if application.status == ApprovalStatus.APPROVED:
                 action = "approve"
                 details = f"申請を承認しました。コメント: {application.approval_comment or 'なし'}"
@@ -133,7 +143,15 @@ def update_application_status(request):
         
         application.save()
         
-    # 通知は post_save シグナルが送信（重複防止）
+        # 通知 (シグナル廃止に伴いここで送信)
+        from notifications.services import NotificationService
+        if application.status == ApprovalStatus.APPROVED and application.approved_at is None:
+            application.approved_at = timezone.now()
+            application.save(update_fields=['approved_at'])
+        if application.status == ApprovalStatus.APPROVED:
+            NotificationService.notify_application_approved(application)
+        elif application.status == ApprovalStatus.REJECTED:
+            NotificationService.notify_application_rejected(application)
         
         # 監査ログを記録
         AuditLog.objects.create(

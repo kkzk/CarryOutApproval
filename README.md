@@ -64,20 +64,37 @@
 ## セットアップ方法
 
 ### 必要な環境
-- **Python 3.8-3.13** (3.13推奨)
-- **[uv](https://docs.astral.sh/uv/)** (高速パッケージマネージャー、推奨) または pip
 
 ### Windows環境での前提条件
-- **Visual Studio Build Tools** または **Visual Studio Community** （Pillowライブラリのコンパイル用）
-- **Redis Server** （WebSocket・リアルタイム通知用、開発時はオプション）
 
+
+## WebSocket イベント仕様 (通知リファクタ後)
+
+カンバン更新は永続通知を介さず直接 WebSocket でイベントを受信します。
+
+イベント種別 (payload.type は常に `kanban_update`):
+- action: `new_application` 申請作成時 (承認者宛)
+- action: `application_approved` 承認完了 (申請者宛)
+- action: `application_rejected` 却下 (申請者宛)
+- action: `application_state` サーバからの手動再同期 / 双方宛ブロードキャスト
+
+共通ペイロード structure:
+```
+{
+   "type": "kanban_update",
+   "action": "<上記アクション>",
+   "application": {  // ApplicationSerializer 出力
+       "id": ..., "status": ..., ...
+   }
+}
+```
+
+補足:
+- 冪等性はクライアント側 (kanban.js) の簡易キャッシュで重複抑止。
+- 今後 `application_state` に統一する移行を行う場合は JS の switch 文を一本化し、サーバ側で全イベントを `application_state` へマップ予定。
+- 永続通知 (Notification モデル) は削除済み。旧 API は利用不可。
 #### WSL (Ubuntu) 上での Redis セットアップ手順
 Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。
-
-1. WSL2 と Ubuntu を用意 (未導入の場合)
-   ```powershell
-   wsl --install -d Ubuntu
-   # 再起動後 Ubuntu 初期設定 (ユーザー/パスワード作成)
    ```
 2. Ubuntu で Redis をインストール
    ```bash

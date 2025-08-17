@@ -1,43 +1,5 @@
-from django.db import models
-from django.contrib.auth import get_user_model
-from django.utils import timezone
-
-User = get_user_model()
-
-
-class NotificationType(models.TextChoices):
-    """通知タイプ"""
-    NEW_APPLICATION = 'new_application', '新規申請'
-    APPLICATION_APPROVED = 'application_approved', '申請承認'
-    APPLICATION_REJECTED = 'application_rejected', '申請却下'
-    APPLICATION_UPDATED = 'application_updated', '申請更新'
-
-
-class Notification(models.Model):
-    """通知モデル"""
-    recipient = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='notifications',
-        verbose_name="受信者"
-    )
-    sender = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='sent_notifications',
-        null=True,
-        blank=True,
-        verbose_name="送信者"
-    )
-    notification_type = models.CharField(
-        max_length=50,
-        choices=NotificationType.choices,
-        verbose_name="通知タイプ"
-    )
-    title = models.CharField(
-        max_length=255,
-        verbose_name="タイトル"
-    )
+"""(削除予定) 永続通知モデルはリファクタで廃止。
+マイグレーション後このファイルは空のまま維持し、循環インポート防止用のダミー。"""
     message = models.TextField(
         verbose_name="メッセージ"
     )

@@ -17,20 +17,18 @@ from django.conf import settings
 User = get_user_model()
 
 
-def _serialize_notification(notification) -> Any:  # Serializer は ReturnDict を返す
-    from .serializers import NotificationSerializer
-    return NotificationSerializer(notification).data
-
 def _serialize_application(application) -> Any:  # Serializer は ReturnDict を返す
     from applications.serializers import ApplicationSerializer
     return ApplicationSerializer(application).data
 
 
-def send_notification_ws(*args, **kwargs):  # 互換 no-op
+def send_notification_ws(*args, **kwargs):
+    """後方互換ダミー (永続通知機能削除済)"""
     return
 
 
-def create_and_dispatch_notification(*args, **kwargs):  # 互換 no-op
+def create_and_dispatch_notification(*args, **kwargs):
+    """後方互換ダミー (永続通知機能削除済)"""
     return
 
 

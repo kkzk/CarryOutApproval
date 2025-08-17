@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django_rq import get_queue
 
@@ -40,9 +39,7 @@ class NotificationService:
     @staticmethod
     def send_kanban_update_notification(user, action, application):
         """カンバンボード更新通知を送信"""
-        if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
-            return
-        from django_rq import get_queue
+    # シンプル化: フラグや重複抑止を排除し常にイベント送信
         # user が文字列(username) の場合 User を取得して id に変換。存在しない場合は username グループ送信でフォールバック
         username_for_fallback = None
         user_id = None
@@ -71,21 +68,7 @@ class NotificationService:
     @staticmethod
     def notify_new_application(application):
         """新規申請の通知"""
-        if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
-            return
-        # 重複防止: 同一 application.id の new_application を短時間で多重送信しない
-        try:
-            from django_rq import get_queue
-            q = get_queue('notifications')
-            conn = q.connection
-            key = f"notif:new_app:{application.id}"
-            # 10秒以内の再送抑止 (SETNX)
-            added = conn.set(key, '1', nx=True, ex=10)
-            if not added:
-                return  # 既に送信済み
-        except Exception:
-            # 失敗時はフォールバックでそのまま続行（最悪二重になるが通知欠落よりは許容）
-            pass
+    # 過剰なRedis重複抑止を撤廃
         NotificationService.send_kanban_update_notification(
             user=application.approver,
             action='new_application',
@@ -95,20 +78,7 @@ class NotificationService:
     @staticmethod
     def notify_application_approved(application):
         """申請承認の通知"""
-        if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
-            return
-        # 冪等化: 承認通知の重複送信防止 (5秒)
-        try:
-            from django_rq import get_queue
-            q = get_queue('notifications')
-            conn = q.connection
-            key = f"notif:approved:{application.id}"
-            added = conn.set(key, '1', nx=True, ex=5)
-            if not added:
-                return
-        except Exception:
-            pass
-        # 永続通知は生成せず Kanban 更新のみ送信
+    # 永続通知は生成せず Kanban 更新のみ送信 (冪等化のRedisガードを撤廃)
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
             action='application_approved',
@@ -118,22 +88,23 @@ class NotificationService:
     @staticmethod
     def notify_application_rejected(application):
         """申請却下の通知"""
-        if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
-            return
-        # 冪等化: 却下通知の重複送信防止 (5秒)
-        try:
-            from django_rq import get_queue
-            q = get_queue('notifications')
-            conn = q.connection
-            key = f"notif:rejected:{application.id}"
-            added = conn.set(key, '1', nx=True, ex=5)
-            if not added:
-                return
-        except Exception:
-            pass
-        # 永続通知は生成せず Kanban 更新のみ送信
+        # 永続通知は生成せず Kanban 更新のみ送信 (冪等化のRedisガード撤廃)
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
             action='application_rejected',
+            application=application
+        )
+
+    @staticmethod
+    def broadcast_application_state(application):
+        """申請の現在状態を申請者・承認者双方にブロードキャスト"""
+        NotificationService.send_kanban_update_notification(
+            user=application.applicant,
+            action='application_state',
+            application=application
+        )
+        NotificationService.send_kanban_update_notification(
+            user=application.approver,
+            action='application_state',
             application=application
         )

@@ -37,6 +37,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('users/', include('users.urls')),
     path('applications/', include('applications.urls')),
+    path('notifications/', include('notifications.urls')),
     path('api/audit/', include('audit.urls')),
     path('websocket-test/', websocket_test, name='websocket-test'),
     path('django-rq/', include('django_rq.urls')),
