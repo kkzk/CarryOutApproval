@@ -64,15 +64,19 @@ def change_status(application: Application, new_status: str, actor, comment: str
             application.approval_comment = comment
         application.save()
 
-        action_map = {
-            ApprovalStatus.APPROVED: "approve",
-            ApprovalStatus.REJECTED: "reject",
-            ApprovalStatus.PENDING: f"revert_to_{new_status}",
-        }
+        if new_status == ApprovalStatus.APPROVED:
+            action = "approve"
+        elif new_status == ApprovalStatus.REJECTED:
+            action = "reject"
+        elif new_status == ApprovalStatus.PENDING:
+            action = f"revert_to_{new_status}"
+        else:
+            action = "status_change"
+
         AuditLog.objects.create(
             user=actor,
             application=application,
-            action=action_map.get(new_status, "status_change"),
+            action=action,
             details=f"{old} -> {new_status} comment={comment or 'なし'}"
         )
 

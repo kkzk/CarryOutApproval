@@ -674,7 +674,7 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 |------|------|------|
 | WebSocket カンバン更新 | 無効 (fallback クローズ) | `LONG_POLLING_ENABLED=True` 時 asgi で consumer 未登録 |
 | RQ 経由の送信タスク | no-op | `NotificationService` が early return |
-| Poll API (`/notifications/poll/kanban/`) | 稼働 | 差分: `updated_at` > since の Application 一括返却 |
+| Poll API (`/applications/poll/updates/?scope=kanban`) | 稼働 | 差分: `updated_at` > since の Application 一括返却 |
 | WebSocket consumer / routing | 残置 (後方互換) | 今後削除予定 (最終確認後) |
 | channels / channels_redis 依存 | まだ残置 | 削除候補 (別ブランチで除去予定) |
 | redis / django_rq | まだ残置 | 他用途が無ければ削除可能 |

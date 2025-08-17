@@ -478,20 +478,31 @@ document.addEventListener('keydown', function(e) {
     let since = null; // ISO8601 (Z)
     let stopped = false;
 
+    let backoffMs = 50;
     function loop(){
         if (!pollingActive || stopped) return;
-        const url = new URL('/notifications/poll/kanban/', window.location.origin);
+        const url = new URL('/applications/poll/updates/', window.location.origin);
+        url.searchParams.set('scope', 'kanban');
         if (since) url.searchParams.set('since', since);
         fetch(url.toString(), { credentials: 'include' })
             .then(r => r.ok ? r.json() : Promise.reject(r.status))
             .then(data => {
                 if (data && Array.isArray(data.applications)) {
-                    data.applications.forEach(app => handleKanbanUpdate({ application: app }));
+                    if (data.applications.length > 0) {
+                        data.applications.forEach(app => handleKanbanUpdate({ application: app }));
+                        backoffMs = 50; // 成功して差分ありなら即再ポーリング
+                    } else {
+                        backoffMs = Math.min(backoffMs * 1.5, 1500); // 空応答で指数的に延長
+                    }
                 }
                 if (data && data.latest) since = data.latest;
+                if (data && data.backoff_hint) {
+                    backoffMs = Math.max(backoffMs, data.backoff_hint.min_ms || 50);
+                    backoffMs = Math.min(backoffMs, data.backoff_hint.max_ms || 1500);
+                }
             })
-            .catch(err => console.error('[Kanban] poll error', err))
-            .finally(() => setTimeout(loop, 50));
+            .catch(err => { console.error('[Kanban] poll error', err); backoffMs = Math.min(backoffMs * 2, 3000); })
+            .finally(() => setTimeout(loop, backoffMs));
     }
 
     function startKanbanPolling(){
