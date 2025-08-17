@@ -25,8 +25,11 @@
         <!-- HTMX (local) -->
         <script src="{% static 'vendor/htmx/1.9.12/htmx.min.js' %}"></script>
         <style>
+        :root { --navbar-height: 56px; }
         body {
             background-color: #f8f9fa;
+            /* ナビバーを fixed-top にした際の被り防止 */
+            padding-top: var(--navbar-height);
         }
         .navbar-brand {
             font-weight: bold;
@@ -38,10 +41,10 @@
         /* サイドバーのスタイル */
         .sidebar {
             position: fixed;
-            top: 56px; /* navbar の高さ分 */
+            top: var(--navbar-height); /* navbar の高さ */
             left: 0;
             width: 250px;
-            height: calc(100vh - 56px);
+            height: calc(100vh - var(--navbar-height));
             background: #343a40;
             color: white;
             z-index: 1000;
@@ -53,18 +56,22 @@
             transform: translateX(-250px);
         }
         
+        /* トグルボタンをナビバーの通常フローに含める（タイトルとの重なり防止） */
         .sidebar-toggle {
-            position: fixed;
-            top: 10px;
-            left: 10px;
+            position: relative; /* fixed を廃止 */
+            top: 0;
+            left: 0;
             z-index: 1001;
             background: #495057;
             border: none;
             color: white;
-            padding: 8px 12px;
+            padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .sidebar-toggle:hover {
@@ -148,7 +155,7 @@
         /* サイドバーが隠れているときのスタイル */
         .sidebar-indicator {
             position: fixed;
-            top: 56px;
+            top: var(--navbar-height);
             left: -50px;
             width: 100px;
             height: 40px;
@@ -165,6 +172,8 @@
             opacity: 0;
             pointer-events: none;
         }
+
+    .app-navbar { z-index: 1100; }
         
         .sidebar-hidden ~ .sidebar-indicator {
             left: 0;
@@ -175,10 +184,10 @@
     </head>
     <body>
         <!-- Navigation -->
-        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top app-navbar">
             <div class="container-fluid">
                 <!-- サイドバートグルボタン -->
-                <button class="sidebar-toggle me-3" id="sidebarToggle">
+        <button class="sidebar-toggle me-3" id="sidebarToggle" aria-label="サイドバーの表示切替" title="サイドバー切替">
                     <i class="bi bi-list"></i>
                 </button>
                 <a class="navbar-brand" href="{% url 'applications:kanban-board' %}">
