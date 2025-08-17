@@ -9,8 +9,7 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 
 import os
 from django.core.asgi import get_asgi_application
-from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
+from channels.routing import ProtocolTypeRouter
 from django.conf import settings
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'carry_out_approval.settings')
@@ -33,12 +32,8 @@ if getattr(settings, 'LONG_POLLING_ENABLED', False):
         "websocket": _websocket_fallback,
     })
 else:
-    from notifications import routing  # 遅延 import
+    # (移行前互換ルートは削除済み) 将来 WebSocket を復活させる場合はここに再度組み込む
     application = ProtocolTypeRouter({
-        "http": django_asgi_app,  # WhiteNoiseミドルウェアで静的ファイルも配信
-        "websocket": AuthMiddlewareStack(
-            URLRouter(
-                routing.websocket_urlpatterns
-            )
-        ),
+        "http": django_asgi_app,
+        # "websocket": <later-if-needed>
     })

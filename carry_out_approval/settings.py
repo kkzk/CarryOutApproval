@@ -47,11 +47,11 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.humanize',
-    'channels',
+    # 'channels',  # Long Polling 移行により停止 (削除予定)
     'rest_framework',
     'corsheaders',
     'django_python3_ldap',
-    'django_rq',
+    # 'django_rq',  # RQ ベース通知廃止 (削除予定)
     'applications',
     'users', 
     'audit',
@@ -391,42 +391,13 @@ SESSION_COOKIE_SAMESITE = 'Lax'  # CSRF対策
 # セッションエンジン（デフォルトはデータベース）
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
-# Django Channels settings
+# (deprecated) Channels / RQ 設定 - Long Polling 移行により無効化。完全削除予定。
 ASGI_APPLICATION = 'carry_out_approval.asgi.application'
-
-# Redis接続URL (例: redis://localhost:6379/0)
 REDIS_URL = config('REDIS_URL', default='redis://127.0.0.1:6379/0')
-
-# CHANNEL_LAYERS: Redis が利用可能なら Redis, そうでなければインメモリ fallback
-if os.environ.get('USE_INMEMORY_CHANNEL_LAYER') == '1':
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        },
-    }
-else:
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [REDIS_URL],
-            },
-        },
-    }
-
-# django-rq (タスクキュー) 設定
-RQ_QUEUES = {
-    'default': {
-        'URL': REDIS_URL,
-        'DEFAULT_TIMEOUT': 300,
-    },
-    'notifications': {
-        'URL': REDIS_URL,
-        'DEFAULT_TIMEOUT': 60,
-    },
-}
-
-# 統計/管理サイトからの失敗ジョブ消去等のための設定例
-RQ = {
-    'AUTOCLEAN_INTERVAL': 60,  # 秒: 完了ジョブのクリーンアップ間隔 (必要に応じ調整)
-}
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels.layers.InMemoryChannelLayer',
+#     },
+# }
+# RQ_QUEUES = {}
+# RQ = {}

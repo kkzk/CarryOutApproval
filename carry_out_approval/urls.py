@@ -40,7 +40,7 @@ urlpatterns = [
     path('notifications/', include('notifications.urls')),
     path('api/audit/', include('audit.urls')),
     path('websocket-test/', websocket_test, name='websocket-test'),
-    path('django-rq/', include('django_rq.urls')),
+    # path('django-rq/', include('django_rq.urls')),  # Long Polling 移行で RQ 管理UI停止
 ]
 
 # 開発環境でのstatic・mediaファイル配信

@@ -90,7 +90,8 @@
 - クライアントは受信した `application.status` (pending / approved / rejected) と DOM 上の現在位置の差分でカード追加/移動とトースト表示を行います。
 - 重複抑止は (application.id, status) の短期キャッシュで行い冪等性を確保しています。
 - 永続通知 (Notification モデル) は削除済み。旧 API は利用不可。
-#### WSL (Ubuntu) 上での Redis セットアップ手順
+#### WSL (Ubuntu) 上での Redis セットアップ手順 (deprecated)
+Long Polling 移行に伴い本アプリは Redis / RQ / Channels を標準では使用しません。以下は旧リアルタイム push 実装の参考資料として残しています (再導入時の手順アーカイブ)。
 Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。
    ```
 2. Ubuntu で Redis をインストール
