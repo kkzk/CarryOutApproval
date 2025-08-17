@@ -53,8 +53,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             action="create",
             details=f"申請を作成しました。ファイル: {application.original_filename}"
         )
-        from notifications.services import NotificationService
-        NotificationService.notify_new_application(application)
+    # 通知は post_save シグナルで送信されるためここでは呼ばない（重複防止）
     
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):
@@ -69,15 +68,13 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             old_status = application.status
             serializer.save()
-            from notifications.services import NotificationService
+            # 通知は post_save シグナルで処理。ここでは監査ログのみ。
             if application.status == ApprovalStatus.APPROVED:
                 action = "approve"
                 details = f"申請を承認しました。コメント: {application.approval_comment or 'なし'}"
-                NotificationService.notify_application_approved(application)
             elif application.status == ApprovalStatus.REJECTED:
                 action = "reject"
                 details = f"申請を拒否しました。コメント: {application.approval_comment or 'なし'}"
-                NotificationService.notify_application_rejected(application)
             else:
                 action = "update_status"
                 details = f"ステータスを {old_status} から {application.status} に変更しました。"
@@ -132,20 +129,11 @@ def update_application_status(request):
         
         if comment:
             application.approval_comment = comment
-            
-        if new_status == ApprovalStatus.APPROVED:
-            application.approved_at = timezone.now()
-            
+    # approved_at は post_save シグナルで設定（ここで設定すると通知が送信されないため）
+        
         application.save()
         
-        # 通知サービスのインポート
-        from notifications.services import NotificationService
-        
-        # 通知を送信
-        if new_status == ApprovalStatus.APPROVED:
-            NotificationService.notify_application_approved(application)
-        elif new_status == ApprovalStatus.REJECTED:
-            NotificationService.notify_application_rejected(application)
+    # 通知は post_save シグナルが送信（重複防止）
         
         # 監査ログを記録
         AuditLog.objects.create(
@@ -214,9 +202,7 @@ def create_application(request):
                         details=f"申請を作成しました。ファイル: {application.original_filename}"
                     )
                     
-                    # 承認者に通知を送信
-                    from notifications.services import NotificationService
-                    NotificationService.notify_new_application(application)
+                    # 通知は post_save シグナルで処理（ここでは重複送信しない）
                     
                     messages.success(request, '申請が正常に作成されました。')
                     return redirect('applications:kanban-board')

@@ -1,7 +1,7 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
+from channels.db import database_sync_to_async  # (将来: 未使用なら削除可)
+from django.contrib.auth import get_user_model  # noqa: F401 (互換目的)
 
 # User モデルをインポートレベルでなく関数内で取得するように変更
 
@@ -14,11 +14,17 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         self.user = self.scope["user"]
         
         if self.user.is_authenticated:
+            # ID グループ + ユーザ名グループ両方参加 (User レコード未解決時フォールバック用)
             self.group_name = f"user_{self.user.id}"
+            self.username_group_name = f"user_{self.user.username}"  # type: ignore[attr-defined]
             
             # ユーザーグループに参加
             await self.channel_layer.group_add(
                 self.group_name,
+                self.channel_name
+            )
+            await self.channel_layer.group_add(
+                self.username_group_name,
                 self.channel_name
             )
             
@@ -34,34 +40,24 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 self.group_name,
                 self.channel_name
             )
+        if hasattr(self, 'username_group_name'):
+            await self.channel_layer.group_discard(
+                self.username_group_name,
+                self.channel_name
+            )
     
     async def receive(self, text_data):
-        """メッセージ受信時の処理"""
+        """クライアントからの簡易メッセージ処理 (現在は ping のみ)"""
         try:
-            text_data_json = json.loads(text_data)
-            message_type = text_data_json.get('type')
-            
-            if message_type == 'ping':
-                # ピング応答
-                await self.send(text_data=json.dumps({
-                    'type': 'pong'
-                }))
-            elif message_type == 'mark_read':
-                # 通知既読処理
-                notification_id = text_data_json.get('notification_id')
-                if notification_id:
-                    await self.mark_notification_as_read(notification_id)
+            payload = json.loads(text_data)
         except json.JSONDecodeError:
-            pass
+            return
+        if payload.get('type') == 'ping':
+            await self.send(text_data=json.dumps({'type': 'pong'}))
     
     async def notification_message(self, event):
-        """通知メッセージを送信"""
-        notification = event['notification']
-        
-        await self.send(text_data=json.dumps({
-            'type': 'notification',
-            'data': notification
-        }))
+        """永続通知機能を無効化したため no-op (後方互換)"""
+        return
     
     async def kanban_update(self, event):
         """カンバンボード更新メッセージを送信"""
@@ -71,16 +67,4 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             'application': event['application']
         }))
     
-    @database_sync_to_async
-    def mark_notification_as_read(self, notification_id):
-        """通知を既読にする（非同期対応）"""
-        from .models import Notification
-        try:
-            notification = Notification.objects.get(
-                id=notification_id,
-                recipient=self.user
-            )
-            notification.mark_as_read()
-            return True
-        except Notification.DoesNotExist:
-            return False
+    # 既読管理機能は無効化

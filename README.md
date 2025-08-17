@@ -13,7 +13,7 @@
 - **管理者**: Django管理画面での全申請管理、監査ログ確認、証跡管理
 
 ### 特徴
-- **リアルタイム通知**: WebSocketによるリアルタイム通知システム
+- **リアルタイム通知**: WebSocket + RQ(バックグラウンドジョブ) + Redis による非同期通知システム
 - **カンバンボード**: 申請状況を視覚的に管理（承認待ち・承認済み・拒否）
 - **リアルタイム更新**: ページリロード不要のAjax通信とWebSocket連携
 - **監査ログ**: 全ての操作を記録し、証跡管理を実現
@@ -57,7 +57,7 @@
 - **ユーザー管理**: 組織階層に基づくユーザー管理
 
 ### ユーザーエクスペリエンス
-- **リアルタイム通知**: WebSocketによる即座の通知更新
+- **リアルタイム通知**: 申請イベントをRQキューへ投入し、ワーカー経由でWebSocketへ配信 (UIスレッド負荷を低減)
 - **リアルタイム更新**: ページリロード不要のスムーズな操作
 - **プログレッシブ・エンハンスメント**: JavaScript無効環境でも基本機能利用可能
 
@@ -70,6 +70,80 @@
 ### Windows環境での前提条件
 - **Visual Studio Build Tools** または **Visual Studio Community** （Pillowライブラリのコンパイル用）
 - **Redis Server** （WebSocket・リアルタイム通知用、開発時はオプション）
+
+#### WSL (Ubuntu) 上での Redis セットアップ手順
+Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。
+
+1. WSL2 と Ubuntu を用意 (未導入の場合)
+   ```powershell
+   wsl --install -d Ubuntu
+   # 再起動後 Ubuntu 初期設定 (ユーザー/パスワード作成)
+   ```
+2. Ubuntu で Redis をインストール
+   ```bash
+   sudo apt update
+   sudo apt install -y redis-server
+   ```
+3. 設定を最小調整 (systemd 監視 & 永続化任意)
+   ```bash
+   sudo sed -i 's/^#* *supervised .*/supervised systemd/' /etc/redis/redis.conf
+   # (任意) AOF 永続化を有効化
+   sudo sed -i 's/^#* *appendonly .*/appendonly yes/' /etc/redis/redis.conf
+   ```
+   パスワードを付けたい場合は `/etc/redis/redis.conf` に行を追加:
+   ```
+   requirepass YourStrongPasswordHere
+   ```
+4. 起動/自動起動設定
+   ```bash
+   sudo systemctl enable --now redis-server
+   systemctl status redis-server --no-pager
+   ```
+5. 動作確認 (WSL 内)
+   ```bash
+   redis-cli ping   # → PONG
+   ```
+6. Windows から疎通確認 (PowerShell)
+   ```powershell
+   wsl -d Ubuntu redis-cli ping
+   ```
+   WSL2 で Redis が `127.0.0.1` にバインドされていれば Windows ホストからも `localhost:6379` でアクセス可能です。`/etc/redis/redis.conf` の `bind` をデフォルト (127.0.0.1) のままにし、`protected-mode yes` を維持してください。
+7. `.env` (または環境変数) 設定例
+   ```env
+   REDIS_URL=redis://localhost:6379/0
+   # パスワードを付与した場合
+   # REDIS_URL=redis://:YourStrongPasswordHere@localhost:6379/0
+   ```
+8. RQ ワーカー起動 (別 PowerShell ターミナル複数)
+   ```powershell
+   uv run python manage.py rqworker notifications
+   uv run python manage.py rqworker default
+   ```
+   通知専用キューだけ使う場合は `notifications` ワーカーだけでも可。負荷次第で `--worker-class` や 並列ターミナルを増やします。
+   
+   Windows で `AttributeError: module 'os' has no attribute 'fork'` が出る場合:
+   デフォルトワーカークラスは `os.fork()` を使うため Windows では失敗します。`SimpleWorker` を指定してフォーク無しで実行してください。
+   ```powershell
+   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker notifications
+   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker default
+   ```
+   あるいは WSL2(Ubuntu) 内で通常のワーカークラスを実行することも可能です。
+9. テスト: 申請作成/承認操作で通知が Redis 経由で配送されるかブラウザ (WebSocket) で確認。
+
+トラブルシュート:
+| 症状 | 確認コマンド | 対処 |
+|------|--------------|------|
+| 接続拒否 | `redis-cli ping` | サービス起動状態 `systemctl status redis-server` |
+| 認証失敗 | `(error) NOAUTH` | `requirepass` 設定と REDIS_URL のパスワード一致 |
+| 遅延/詰まり | `redis-cli info stats` | キュー長監視 `redis-cli llen rq:queue:notifications` |
+| メモリ不足 | `redis-cli info memory` | maxmemory 設定/不要キー削除 |
+
+Docker 代替 (WSL に Docker Desktop がある場合):
+```powershell
+docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
+```
+同様に `REDIS_URL=redis://localhost:6379/0` を使用します。
+
 
 ### 簡単セットアップ・起動（Windows PowerShell）
 

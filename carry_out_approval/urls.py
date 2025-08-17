@@ -38,8 +38,8 @@ urlpatterns = [
     path('users/', include('users.urls')),
     path('applications/', include('applications.urls')),
     path('api/audit/', include('audit.urls')),
-    path('api/notifications/', include('notifications.urls')),
     path('websocket-test/', websocket_test, name='websocket-test'),
+    path('django-rq/', include('django_rq.urls')),
 ]
 
 # 開発環境でのstatic・mediaファイル配信

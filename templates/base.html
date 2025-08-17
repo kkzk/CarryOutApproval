@@ -352,10 +352,8 @@
     <!-- Bootstrap JS (local) -->
     <script src="{% static 'vendor/bootstrap/5.3.3/js/bootstrap.bundle.min.js' %}"></script>
     
-    <!-- 通知機能 -->
-    {% if user.is_authenticated %}
-        <script src="{% static 'js/notifications.js' %}"></script>
-    {% endif %}
+    {# 旧 永続通知機能 (notifications.js) は廃止。API /api/notifications/* も削除済みのため読み込みを停止。 #}
+    {# 必要なリアルタイム更新は kanban.js(WebSocket) の kanban_update イベントのみを使用。 #}
     
     <!-- サイドバー制御 -->
     <script>

@@ -50,14 +50,15 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_python3_ldap',
+    'django_rq',
     'applications',
     'users', 
     'audit',
     'notifications',
 ]
 
-# 通知機能 ON/OFF フラグ（後で復活予定）
-NOTIFICATIONS_ENABLED = False  # 一時停止中。復活時 True に変更または環境変数化
+# 通知機能 ON/OFF フラグ
+NOTIFICATIONS_ENABLED = config('NOTIFICATIONS_ENABLED', default=True, cast=bool)
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -378,19 +379,39 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 # Django Channels settings
 ASGI_APPLICATION = 'carry_out_approval.asgi.application'
 
-# Channel layers (開発環境用 - インメモリ)
-CHANNEL_LAYERS = {
+# Redis接続URL (例: redis://localhost:6379/0)
+REDIS_URL = config('REDIS_URL', default='redis://127.0.0.1:6379/0')
+
+# CHANNEL_LAYERS: Redis が利用可能なら Redis, そうでなければインメモリ fallback
+if os.environ.get('USE_INMEMORY_CHANNEL_LAYER') == '1':
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        },
+    }
+
+# django-rq (タスクキュー) 設定
+RQ_QUEUES = {
     'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        'URL': REDIS_URL,
+        'DEFAULT_TIMEOUT': 300,
+    },
+    'notifications': {
+        'URL': REDIS_URL,
+        'DEFAULT_TIMEOUT': 60,
     },
 }
 
-# 本番環境でRedisが利用可能な場合はこちらを使用
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {
-#             "hosts": [('127.0.0.1', 6379)],
-#         },
-#     },
-# }
+# 統計/管理サイトからの失敗ジョブ消去等のための設定例
+RQ = {
+    'AUTOCLEAN_INTERVAL': 60,  # 秒: 完了ジョブのクリーンアップ間隔 (必要に応じ調整)
+}

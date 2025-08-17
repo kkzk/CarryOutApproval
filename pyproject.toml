@@ -22,6 +22,10 @@ dependencies = [
     "dotenv>=0.9.9",
     # For LDAP NTLM hash (MD4) support used by ldap3.utils.ntlm
     "pycryptodome>=3.20.0",
+    # 非同期ジョブキュー (通知送信や重い処理のオフロード)
+    "django-rq>=2.10.1",
+    "redis>=5.0.0",
+    "channels-redis>=4.2.1",
 ]
 
 [project.optional-dependencies]
