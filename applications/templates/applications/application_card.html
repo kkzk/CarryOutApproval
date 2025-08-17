@@ -38,22 +38,20 @@
         </div>
         <div class="card-body">
             <div class="card-text">
-                <small class="text-muted">
-                    <div class="mb-1">
+                <div class="mb-1">
                         <i class="bi bi-person"></i> 
                         申請者: {{ application.applicant }}
-                    </div>
-                    <div class="mb-1">
+                </div>
+                <div class="mb-1">
                         <i class="bi bi-calendar"></i> 
                         {{ application.created_at|naturaltime }}
-                    </div>
-                    {% if application.file_size %}
-                    <div class="mb-1">
+                </div>
+                {% if application.file_size %}
+                <div class="mb-1">
                         <i class="bi bi-file-bar-graph"></i> 
                         {{ application.file_size|filesizeformat }}
-                    </div>
-                    {% endif %}
-                </small>
+                </div>
+                {% endif %}
             </div>
             <div class="expandable-content">
                 {% if application.comment %}
