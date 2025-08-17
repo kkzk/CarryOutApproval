@@ -9,10 +9,9 @@
     
     <!-- Local vendored CSS -->
     <link href="{% static 'vendor/bootstrap/5.3.3/css/bootstrap.min.css' %}" rel="stylesheet">
-    <link href="{% static 'vendor/bootstrap-icons/1.11.3/bootstrap-icons.css' %}" rel="stylesheet">
+    <link href="{% static 'vendor/bootstrap-icons/1.11.3/font/bootstrap-icons.css' %}" rel="stylesheet">
     <link href="{% static 'vendor/fontawesome/6.5.2/css/all.min.css' %}" rel="stylesheet">
-    <!-- Remove TTF fallback to avoid 404 in offline package -->
-    <link href="{% static 'vendor/fontawesome/6.5.2/css/fa-local-overrides.css' %}" rel="stylesheet">
+    {# FontAwesome local overrides disabled in development #}
     
     <!-- Custom CSS -->
     {% block extra_css %}{% endblock %}
@@ -352,10 +351,8 @@
     <!-- Bootstrap JS (local) -->
     <script src="{% static 'vendor/bootstrap/5.3.3/js/bootstrap.bundle.min.js' %}"></script>
     
-    <!-- 通知機能 -->
-    {% if user.is_authenticated %}
-        <script src="{% static 'js/notifications.js' %}"></script>
-    {% endif %}
+    {# 旧 永続通知機能 (notifications.js) は廃止。API /api/notifications/* も削除済みのため読み込みを停止。 #}
+    {# 必要なリアルタイム更新は kanban.js(WebSocket) の kanban_update イベントのみを使用。 #}
     
     <!-- サイドバー制御 -->
     <script>
@@ -424,6 +421,10 @@
     </script>
     
     <!-- Custom JS -->
+    <script>
+        // サーバ設定からリアルタイム方式フラグを埋め込み (安全な単純代入)
+        window.USE_KANBAN_POLLING = {{ LONG_POLLING_ENABLED|yesno:'true,false' }};
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

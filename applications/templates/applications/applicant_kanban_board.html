@@ -6,6 +6,37 @@
 
 {% block extra_css %}
 <link href="{% static 'applications/css/kanban.css' %}" rel="stylesheet">
+<style>
+    .application-card {
+        transition: max-height 0.5s ease-in-out;
+        max-height: 180px; /* 初期状態のカードの高さ */
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+    .application-card.expanded {
+        max-height: 500px; /* 展開後のカードの高さ */
+    }
+    .application-card .card-content {
+        flex-grow: 1;
+        overflow: hidden;
+    }
+    .application-card .expandable-content {
+        display: none;
+    }
+    .application-card.expanded .expandable-content {
+        display: block;
+    }
+    .application-card .card-footer {
+        flex-shrink: 0;
+        cursor: pointer;
+        background-color: #f8f9fa;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -39,7 +70,7 @@
             </div>
             <div class="kanban-body" id="pending-column" data-status="pending">
                 {% for application in pending_applications %}
-                    {% include 'applications/application_card.html' %}
+                    {% include 'applications/applicant_application_card.html' %}
                 {% empty %}
                     <div class="text-muted text-center p-3">
                         <i class="bi bi-inbox"></i><br>
@@ -56,7 +87,7 @@
             </div>
             <div class="kanban-body" id="approved-column" data-status="approved">
                 {% for application in approved_applications %}
-                    {% include 'applications/application_card.html' %}
+                    {% include 'applications/applicant_application_card.html' %}
                 {% empty %}
                     <div class="text-muted text-center p-3">
                         <i class="bi bi-inbox"></i><br>
@@ -73,7 +104,7 @@
             </div>
             <div class="kanban-body" id="rejected-column" data-status="rejected">
                 {% for application in rejected_applications %}
-                    {% include 'applications/application_card.html' %}
+                    {% include 'applications/applicant_application_card.html' %}
                 {% empty %}
                     <div class="text-muted text-center p-3">
                         <i class="bi bi-inbox"></i><br>
@@ -126,6 +157,20 @@
 <script src="{% static 'vendor/sortablejs/1.15.6/Sortable.min.js' %}"></script>
 <script src="{% static 'applications/js/kanban.js' %}"></script>
 <script>
+function toggleCard(element, event) {
+    event.stopPropagation();
+    event.preventDefault();
+    const card = element.closest('.application-card');
+    card.classList.toggle('expanded');
+    const icon = element.querySelector('.expand-icon');
+    if (card.classList.contains('expanded')) {
+        icon.classList.remove('bi-chevron-down');
+        icon.classList.add('bi-chevron-up');
+    } else {
+        icon.classList.remove('bi-chevron-up');
+        icon.classList.add('bi-chevron-down');
+    }
+}
 // 申請者用カンバンボードのWebSocket設定
 document.addEventListener('DOMContentLoaded', function() {
     // ブラウザ通知の許可を要求
@@ -138,41 +183,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 申請者向けのカスタムメッセージハンドラー
+    // 統一後 action=application_state を前提にステータス遷移のみ追加でブラウザ通知
     const originalHandleKanbanUpdate = window.handleKanbanUpdate;
     window.handleKanbanUpdate = function(data) {
-        const { action, application } = data;
-        
-        switch (action) {
-            case 'application_approved':
-                moveApplicationCard(application.id, 'approved');
-                showApprovalNotification(application);
-                // ブラウザ通知も送信
-                sendBrowserNotification(
-                    '申請が承認されました！',
-                    `申請「${application.original_filename}」が承認されました。`,
-                    'success'
-                );
-                break;
-            case 'application_rejected':
-                moveApplicationCard(application.id, 'rejected');
-                showRejectionNotification(application);
-                // ブラウザ通知も送信
-                sendBrowserNotification(
-                    '申請について',
-                    `申請「${application.original_filename}」が却下されました。`,
-                    'warning'
-                );
-                break;
-            default:
-                // 元の処理を呼び出し
-                if (originalHandleKanbanUpdate) {
-                    originalHandleKanbanUpdate(data);
-                }
-                break;
+        const beforeApproved = isCardInColumn(data.application.id, 'approved');
+        const beforeRejected = isCardInColumn(data.application.id, 'rejected');
+        if (originalHandleKanbanUpdate) originalHandleKanbanUpdate(data);
+        const status = data.application.status;
+        if (status === 'approved' && !beforeApproved) {
+            showApprovalNotification(data.application);
+            sendBrowserNotification(
+                '申請が承認されました！',
+                `申請「${data.application.original_filename}」が承認されました。`,
+                'success'
+            );
+        } else if (status === 'rejected' && !beforeRejected) {
+            showRejectionNotification(data.application);
+            sendBrowserNotification(
+                '申請について',
+                `申請「${data.application.original_filename}」が却下されました。`,
+                'warning'
+            );
         }
-        
         updateColumnCounts();
-    };
+    }
     
     // ブラウザ通知を送信
     window.sendBrowserNotification = function(title, message, type) {

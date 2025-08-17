@@ -360,7 +360,8 @@
                 "--reload-dir",".",
                 "--reload-dir","applications/templates",
                 "--reload-dir","notifications",
-                "--reload-dir","templates"
+                "--reload-dir","templates",
+                "--reload-include","*.html"
             ],
             "group": {
                 "kind": "build",
