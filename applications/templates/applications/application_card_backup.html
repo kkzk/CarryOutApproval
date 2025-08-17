@@ -1,78 +1,69 @@
 {% load humanize %}
-<div class="application-card" 
-     data-id="{{ application.id }}" 
-     data-status="{{ application.status }}"
-     style="cursor: grab;">
-    <div class="card-content" onclick="showApplicationDetail({{ application.id }})">
-        <div class="card-header" style="display: flex !important; justify-content: flex-start !important; align-items: center !important; gap: 0.75rem;">
+<div class="application-card application-card-sizing"
+     data-id="{{ application.id }}"
+     data-status="{{ application.status }}">
+    <div class="card-content"
+         onclick="showApplicationDetail({{ application.id }})">
+        <div class="card-header flex-header">
             <!-- 左側：申請ID。将来的にはサムネイル -->
             <div>
                 <small class="text-muted">#{{ application.id }}</small>
             </div>
             <!-- 右側：情報を縦に並べる -->
-            <div style="flex-grow: 1; min-width: 0;">
+            <div class="card-flex-grow">
                 <!-- 申請ID -->
                 <!-- ステータス -->
                 <div class="mb-2">
-                    <span class="badge 
-                        {% if application.status == 'pending' %}bg-warning text-dark
-                        {% elif application.status == 'approved' %}bg-success
-                        {% elif application.status == 'rejected' %}bg-danger
-                        {% else %}bg-secondary{% endif %}">
+                    <span class="badge {% if application.status == 'pending' %}bg-warning text-dark {% elif application.status == 'approved' %}bg-success {% elif application.status == 'rejected' %}bg-danger {% else %}bg-secondary{% endif %}">
                         {{ application.get_status_display }}
                     </span>
                 </div>
                 <!-- ファイル名 -->
-                <div class="mb-1" style="overflow: hidden;">
-                    <small class="d-block" title="{{ application.original_filename }}" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                        {{ application.original_filename }}
-                    </small>
+                <div class="mb-1 overflow-hidden">
+                    <small class="d-block truncate-ellipsis"
+                           title="{{ application.original_filename }}">{{ application.original_filename }}</small>
                 </div>
                 <!-- 承認者 -->
-                <div class="mb-0" style="overflow: hidden;">
-                    <small class="text-muted d-block" style="white-space: nowrap;overflow: hidden;text-overflow: ellipsis;padding-top: 0px;padding-bottom: 0px;margin-top: 0px;margin-bottom: 0px;">
-                        承認者: {{ application.approver }}
-                    </small>
+                <div class="mb-0 overflow-hidden">
+                    <small class="text-muted d-block truncate-ellipsis compact-line">承認者: {{ application.approver }}</small>
                 </div>
             </div>
         </div>
         <div class="card-body">
             <div class="card-text">
                 <div class="mb-1">
-                        <i class="bi bi-person"></i> 
-                        申請者: {{ application.applicant }}
+                    <i class="bi bi-person"></i>
+                    申請者: {{ application.applicant }}
                 </div>
                 <div class="mb-1">
-                        <i class="bi bi-calendar"></i> 
-                        {{ application.created_at|naturaltime }}
+                    <i class="bi bi-calendar"></i>
+                    {{ application.created_at|naturaltime }}
                 </div>
                 {% if application.file_size %}
-                <div class="mb-1">
-                        <i class="bi bi-file-bar-graph"></i> 
+                    <div class="mb-1">
+                        <i class="bi bi-file-bar-graph"></i>
                         {{ application.file_size|filesizeformat }}
-                </div>
+                    </div>
                 {% endif %}
             </div>
             <div class="expandable-content">
                 {% if application.comment %}
-                <div class="card-text">
-                    <small class="text-primary">
-                        <i class="bi bi-chat-left-text"></i> 
-                        {{ application.comment|truncatechars:50 }}
-                    </small>
-                </div>
+                    <div class="card-text">
+                        <small class="text-primary">
+                            <i class="bi bi-chat-left-text"></i>
+                            {{ application.comment|truncatechars:50 }}
+                        </small>
+                    </div>
                 {% endif %}
                 {% if application.approval_comment %}
-                <div class="card-text">
-                    <small class="
-                        {% if application.status == 'approved' %}text-success
-                        {% elif application.status == 'rejected' %}text-danger
-                        {% else %}text-info{% endif %}">
-                        <i class="bi bi-chat-right-text"></i> 
-                        <strong>承認者コメント:</strong><br>
-                        {{ application.approval_comment|truncatechars:80 }}
-                    </small>
-                </div>
+                    <div class="card-text">
+                        <small class=" {% if application.status == 'approved' %}text-success {% elif application.status == 'rejected' %}text-danger {% else %}text-info{% endif %}">
+                            <i class="bi bi-chat-right-text"></i>
+                            <strong>承認者コメント:</strong>
+                            <br>
+                            {{ application.approval_comment|truncatechars:80 }}
+                        </small>
+                    </div>
                 {% endif %}
             </div>
         </div>

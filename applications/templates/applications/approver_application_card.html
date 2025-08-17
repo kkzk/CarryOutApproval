@@ -1,28 +1,24 @@
 {% load humanize %}
-<div class="application-card" 
-     data-id="{{ application.id }}" 
-     data-status="{{ application.status }}"
-     style="cursor: grab;">
-    <div class="card-content" onclick="showApplicationDetail({{ application.id }})">
-        <div class="card-header" style="display: flex !important; justify-content: flex-start !important; align-items: center !important; gap: 0.75rem;">
+<div class="application-card application-card-sizing"
+     data-id="{{ application.id }}"
+     data-status="{{ application.status }}">
+    <div class="card-content"
+         onclick="showApplicationDetail({{ application.id }})">
+        <div class="card-header flex-header">
             <!-- 左側：申請ID -->
             <div>
                 <small class="text-muted">#{{ application.id }}</small>
             </div>
             <!-- 右側：情報を縦に並べる -->
-            <div style="flex-grow: 1; min-width: 0;">
+            <div class="card-flex-grow">
                 <!-- 申請者情報（承認者にとって最重要） -->
                 <div class="mb-2 d-flex align-items-center justify-content-between">
                     <div>
-                        <strong class="text-primary" style="font-size: 1.1em;">
+                        <strong class="text-primary filename-strong">
                             <i class="bi bi-person-fill me-1"></i> {{ application.applicant }}
                         </strong>
                     </div>
-                    <span class="badge
-                        {% if application.status == 'pending' %}bg-warning text-dark
-                        {% elif application.status == 'approved' %}bg-success
-                        {% elif application.status == 'rejected' %}bg-danger
-                        {% else %}bg-secondary{% endif %}">
+                    <span class="badge {% if application.status == 'pending' %}bg-warning text-dark {% elif application.status == 'approved' %}bg-success {% elif application.status == 'rejected' %}bg-danger {% else %}bg-secondary{% endif %}">
                         {% if application.status == 'pending' %}
                             <i class="bi bi-clock-history me-1"></i>要確認
                         {% else %}
@@ -31,21 +27,19 @@
                     </span>
                 </div>
                 <!-- ファイル名 -->
-                <div class="mb-1" style="overflow: hidden;">
-                    <small class="d-block text-dark" title="{{ application.original_filename }}" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;">
+                <div class="mb-1 overflow-hidden">
+                    <small class="d-block text-dark truncate-ellipsis filename-weight"
+                           title="{{ application.original_filename }}">
                         <i class="bi bi-file-earmark me-1"></i> {{ application.original_filename }}
                     </small>
                 </div>
                 <!-- 緊急度表示（申請日からの経過時間） -->
                 <div class="mb-0 d-flex align-items-center justify-content-between">
-                    <small class="
-                        {% if application.created_at|timesince|slice:':1' > '3' %}text-danger
-                        {% elif application.created_at|timesince|slice:':1' > '1' %}text-warning
-                        {% else %}text-muted{% endif %}">
+                    <small class=" {% if application.created_at|timesince|slice:':1' > '3' %}text-danger {% elif application.created_at|timesince|slice:':1' > '1' %}text-warning {% else %}text-muted{% endif %}">
                         <i class="bi bi-clock me-1"></i> {{ application.created_at|naturaltime }}
                     </small>
                     {% if application.file_size %}
-                    <i class="bi bi-file-bar-graph me-1"></i>{{ application.file_size|filesizeformat }}
+                        <i class="bi bi-file-bar-graph me-1"></i>{{ application.file_size|filesizeformat }}
                     {% endif %}
                 </div>
             </div>
@@ -54,60 +48,55 @@
             <div class="card-text">
                 <!-- 申請理由（承認判断に重要） -->
                 {% if application.comment %}
-                <div class="mb-2 p-2 border-start border-3 border-info bg-light">
-                    <i class="bi bi-chat-quote text-info me-1"></i> 
-                    <strong style="font-size: 0.9em;">申請理由:</strong><br>
-                    <span class="text-muted" style="font-size: 0.9em;">{{ application.comment|truncatechars:90 }}</span>
-                </div>
+                    <div class="mb-2 p-2 border-start border-3 border-info bg-light">
+                        <i class="bi bi-chat-quote text-info me-1"></i>
+                        <strong class="reason-box">申請理由:</strong>
+                        <br>
+                        <span class="text-muted small-text-90">{{ application.comment|truncatechars:90 }}</span>
+                    </div>
                 {% endif %}
                 <!-- 承認者の操作履歴表示 -->
                 {% if application.status != 'pending' %}
-                <div class="mb-1">
-                    <small class="
-                        {% if application.status == 'approved' %}text-success
-                        {% elif application.status == 'rejected' %}text-danger{% endif %}">
-                        <i class="bi 
-                            {% if application.status == 'approved' %}bi-check-circle-fill
-                            {% elif application.status == 'rejected' %}bi-x-circle-fill{% endif %} me-1"></i>
-                        {% if application.status == 'approved' %}承認完了
-                        {% elif application.status == 'rejected' %}却下済み{% endif %}
-                        {% if application.updated_at %} - {{ application.updated_at|naturaltime }}{% endif %}
-                    </small>
-                </div>
+                    <div class="mb-1">
+                        <small class=" {% if application.status == 'approved' %}text-success {% elif application.status == 'rejected' %}text-danger{% endif %}">
+                            <i class="bi {% if application.status == 'approved' %}bi-check-circle-fill {% elif application.status == 'rejected' %}bi-x-circle-fill{% endif %} me-1"></i>
+                            {% if application.status == 'approved' %}
+                                承認完了
+                            {% elif application.status == 'rejected' %}
+                                却下済み
+                            {% endif %}
+                            {% if application.updated_at %}- {{ application.updated_at|naturaltime }}{% endif %}
+                        </small>
+                    </div>
                 {% endif %}
             </div>
             <div class="expandable-content">
                 <!-- 承認者のコメント（自分のコメント） -->
                 {% if application.approval_comment %}
-                <div class="card-text">
-                    <div class="border-start border-3 ps-3 mb-2
-                        {% if application.status == 'approved' %}border-success bg-success-subtle
-                        {% elif application.status == 'rejected' %}border-danger bg-danger-subtle
-                        {% else %}border-info bg-info-subtle{% endif %}">
-                        <small class="
-                            {% if application.status == 'approved' %}text-success-emphasis
-                            {% elif application.status == 'rejected' %}text-danger-emphasis
-                            {% else %}text-info-emphasis{% endif %}">
-                            <i class="bi bi-chat-right-text me-1"></i> 
-                            <strong>承認コメント:</strong><br>
-                            <span style="font-size: 0.85em;">{{ application.approval_comment|truncatechars:120 }}</span>
-                        </small>
+                    <div class="card-text">
+                        <div class="border-start border-3 ps-3 mb-2 {% if application.status == 'approved' %}border-success bg-success-subtle {% elif application.status == 'rejected' %}border-danger bg-danger-subtle {% else %}border-info bg-info-subtle{% endif %}">
+                            <small class=" {% if application.status == 'approved' %}text-success-emphasis {% elif application.status == 'rejected' %}text-danger-emphasis {% else %}text-info-emphasis{% endif %}">
+                                <i class="bi bi-chat-right-text me-1"></i>
+                                <strong>承認コメント:</strong>
+                                <br>
+                                <span class="small-text-85">{{ application.approval_comment|truncatechars:120 }}</span>
+                            </small>
+                        </div>
                     </div>
-                </div>
                 {% endif %}
                 <!-- 承認待ちの場合はアクションガイド -->
                 {% if application.status == 'pending' %}
-                <div class="card-text mt-2">
-                    <div class="d-flex align-items-center gap-2">
-                        <small class="text-warning flex-grow-1">
-                            <i class="bi bi-arrow-left-right me-1"></i> 
-                            ドラッグ&ドロップで承認/却下
-                        </small>
-                        <small class="text-info">
-                            <i class="bi bi-mouse me-1"></i> 詳細を見る
-                        </small>
+                    <div class="card-text mt-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <small class="text-warning flex-grow-1">
+                                <i class="bi bi-arrow-left-right me-1"></i>
+                                ドラッグ&ドロップで承認/却下
+                            </small>
+                            <small class="text-info">
+                                <i class="bi bi-mouse me-1"></i> 詳細を見る
+                            </small>
+                        </div>
                     </div>
-                </div>
                 {% endif %}
             </div>
         </div>

@@ -1,162 +1,134 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
 {% load humanize %}
-
-{% block title %}申請状況ボード - 承認申請管理システム{% endblock %}
-
+{% block title %}申請状況ボード - 承認申請管理システム{% endblock title %}
 {% block extra_css %}
-<link href="{% static 'applications/css/kanban.css' %}" rel="stylesheet">
-<style>
-    .application-card {
-        transition: max-height 0.5s ease-in-out;
-        max-height: 180px; /* 初期状態のカードの高さ */
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        margin-bottom: 1rem;
-    }
-    .application-card.expanded {
-        max-height: 500px; /* 展開後のカードの高さ */
-    }
-    .application-card .card-content {
-        flex-grow: 1;
-        overflow: hidden;
-    }
-    .application-card .expandable-content {
-        display: none;
-    }
-    .application-card.expanded .expandable-content {
-        display: block;
-    }
-    .application-card .card-footer {
-        flex-shrink: 0;
-        cursor: pointer;
-        background-color: #f8f9fa;
-    }
-</style>
-{% endblock %}
-
+    <link href="{% static "applications/css/kanban.css" %}" rel="stylesheet">
+    <link href="{% static "applications/css/application_cards.css" %}"
+          rel="stylesheet">
+{% endblock extra_css %}
 {% block content %}
-<div class="container-fluid">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h2 class="d-inline-block">
-                    <i class="bi bi-kanban"></i> 申請状況ボード
-                    <small class="text-muted fs-6">（申請者として）</small>
-                </h2>
-                <div>
-                    <a href="{% url 'applications:create-application' %}" class="btn btn-primary">
-                        <i class="fas fa-plus me-2"></i>新規申請作成
-                    </a>
-                    <a href="{% url 'applications:my-applications-list' %}" class="btn btn-outline-info">
-                        <i class="fas fa-list me-2"></i>申請一覧
-                    </a>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h2 class="d-inline-block">
+                        <i class="bi bi-kanban"></i> 申請状況ボード
+                        <small class="text-muted fs-6">（申請者として）</small>
+                    </h2>
+                    <div>
+                        <a href="{% url "applications:create-application" %}"
+                           class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>新規申請作成
+                        </a>
+                        <a href="{% url "applications:my-applications-list" %}"
+                           class="btn btn-outline-info">
+                            <i class="fas fa-list me-2"></i>申請一覧
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Kanban Board -->
+        <div class="kanban-board">
+            <!-- 申請中 -->
+            <div class="kanban-column">
+                <div class="kanban-header bg-warning text-dark">
+                    <h5>
+                        <i class="bi bi-clock-history"></i> 申請中 ({{ pending_applications.count }})
+                    </h5>
+                </div>
+                <div class="kanban-body" id="pending-column" data-status="pending">
+                    {% for application in pending_applications %}
+                        {% include "applications/applicant_application_card.html" %}
+                    {% empty %}
+                        <div class="text-muted text-center p-3">
+                            <i class="bi bi-inbox"></i>
+                            <br>
+                            申請中の案件はありません
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <!-- 承認済み -->
+            <div class="kanban-column">
+                <div class="kanban-header bg-success text-white">
+                    <h5>
+                        <i class="bi bi-check-circle"></i> 承認済み ({{ approved_applications.count }})
+                    </h5>
+                </div>
+                <div class="kanban-body" id="approved-column" data-status="approved">
+                    {% for application in approved_applications %}
+                        {% include "applications/applicant_application_card.html" %}
+                    {% empty %}
+                        <div class="text-muted text-center p-3">
+                            <i class="bi bi-inbox"></i>
+                            <br>
+                            承認済みの案件はありません
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <!-- 却下 -->
+            <div class="kanban-column">
+                <div class="kanban-header bg-danger text-white">
+                    <h5>
+                        <i class="bi bi-x-circle"></i> 却下 ({{ rejected_applications.count }})
+                    </h5>
+                </div>
+                <div class="kanban-body" id="rejected-column" data-status="rejected">
+                    {% for application in rejected_applications %}
+                        {% include "applications/applicant_application_card.html" %}
+                    {% empty %}
+                        <div class="text-muted text-center p-3">
+                            <i class="bi bi-inbox"></i>
+                            <br>
+                            却下された案件はありません
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Kanban Board -->
-    <div class="kanban-board">
-        <!-- 申請中 -->
-        <div class="kanban-column">
-            <div class="kanban-header bg-warning text-dark">
-                <h5><i class="bi bi-clock-history"></i> 申請中 ({{ pending_applications.count }})</h5>
-            </div>
-            <div class="kanban-body" id="pending-column" data-status="pending">
-                {% for application in pending_applications %}
-                    {% include 'applications/applicant_application_card.html' %}
-                {% empty %}
-                    <div class="text-muted text-center p-3">
-                        <i class="bi bi-inbox"></i><br>
-                        申請中の案件はありません
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- 承認済み -->
-        <div class="kanban-column">
-            <div class="kanban-header bg-success text-white">
-                <h5><i class="bi bi-check-circle"></i> 承認済み ({{ approved_applications.count }})</h5>
-            </div>
-            <div class="kanban-body" id="approved-column" data-status="approved">
-                {% for application in approved_applications %}
-                    {% include 'applications/applicant_application_card.html' %}
-                {% empty %}
-                    <div class="text-muted text-center p-3">
-                        <i class="bi bi-inbox"></i><br>
-                        承認済みの案件はありません
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- 却下 -->
-        <div class="kanban-column">
-            <div class="kanban-header bg-danger text-white">
-                <h5><i class="bi bi-x-circle"></i> 却下 ({{ rejected_applications.count }})</h5>
-            </div>
-            <div class="kanban-body" id="rejected-column" data-status="rejected">
-                {% for application in rejected_applications %}
-                    {% include 'applications/applicant_application_card.html' %}
-                {% empty %}
-                    <div class="text-muted text-center p-3">
-                        <i class="bi bi-inbox"></i><br>
-                        却下された案件はありません
-                    </div>
-                {% endfor %}
+    <!-- 詳細モーダル -->
+    <div id="detail-modal" class="modal fade" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content" id="modal-content">
+                <!-- HTMXで動的に読み込み -->
             </div>
         </div>
     </div>
-</div>
-
-<!-- 詳細モーダル -->
-<div id="detail-modal" class="modal fade" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content" id="modal-content">
-            <!-- HTMXで動的に読み込み -->
-        </div>
-    </div>
-</div>
-
-<!-- 新規申請モーダル -->
-<div class="modal fade" id="newApplicationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-plus-circle"></i> 新規申請
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted">
-                    <i class="bi bi-info-circle"></i> 
-                    新規申請作成ページに移動します。
-                </p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-                <a href="{% url 'applications:create-application' %}" class="btn btn-primary">
-                    申請作成ページへ
-                </a>
+    <!-- 新規申請モーダル -->
+    <div class="modal fade" id="newApplicationModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle"></i> 新規申請
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">
+                        <i class="bi bi-info-circle"></i>
+                        新規申請作成ページに移動します。
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
+                    <a href="{% url "applications:create-application" %}"
+                       class="btn btn-primary">申請作成ページへ</a>
+                </div>
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
-
+{% endblock content %}
 {% block extra_js %}
-{% load static %}
-<script src="{% static 'vendor/sortablejs/1.15.6/Sortable.min.js' %}"></script>
-<script src="{% static 'applications/js/kanban.js' %}"></script>
-<script>
+    {% load static %}
+    <script src="{% static "vendor/sortablejs/1.15.6/Sortable.min.js" %}"></script>
+    <script src="{% static "applications/js/kanban.js" %}"></script>
+    <script>
 function toggleCard(element, event) {
     event.stopPropagation();
     event.preventDefault();
@@ -259,5 +231,5 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
-</script>
-{% endblock %}
+    </script>
+{% endblock extra_js %}
