@@ -80,14 +80,18 @@ def poll_updates(request):
             break
         time.sleep(POLL_INTERVAL_SECONDS)
 
-    return Response({
-        'applications': serialized,
-        'latest': latest_seen.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z'),
-        'scope': scope,
-        'backoff_hint': {
-            'min_ms': 200,
-            'max_ms': 2000,
-            'strategy': 'exponential-jitter',
-            'note': '連続空応答時はポーリング間隔を徐々に延長してください'
-        }
-    })
+    try:
+        return Response({
+            'applications': serialized,
+            'latest': latest_seen.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z'),
+            'scope': scope,
+            'backoff_hint': {
+                'min_ms': 200,
+                'max_ms': 2000,
+                'strategy': 'exponential-jitter',
+                'note': '連続空応答時はポーリング間隔を徐々に延長してください'
+            }
+        })
+    except BrokenPipeError:
+        # クライアント切断時は何も返さず正常終了
+        return
