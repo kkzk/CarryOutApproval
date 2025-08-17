@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django_rq import get_queue
 
 User = get_user_model()
@@ -39,7 +40,11 @@ class NotificationService:
     @staticmethod
     def send_kanban_update_notification(user, action, application):
         """カンバンボード更新通知を送信"""
-    # シンプル化: フラグや重複抑止を排除し常にイベント送信
+        # ロングポーリング移行後は Application.updated_at の変化をクライアントが取得するため
+        # WebSocket 経由の即時 push は不要。後方互換のためフラグで分岐。
+        if getattr(settings, 'LONG_POLLING_ENABLED', False):
+            return  # no-op (段階的移行中)
+        # シンプル化: フラグや重複抑止を排除し常にイベント送信
         # user が文字列(username) の場合 User を取得して id に変換。存在しない場合は username グループ送信でフォールバック
         username_for_fallback = None
         user_id = None
@@ -71,6 +76,8 @@ class NotificationService:
 
         applicant と approver が同一ユーザ名の場合は 1 回のみ送信。
         """
+        if getattr(settings, 'LONG_POLLING_ENABLED', False):
+            return  # ロングポーリングで差分取得するため不要
         unique_usernames = []
         for username in [application.applicant, application.approver]:
             if username and username not in unique_usernames:

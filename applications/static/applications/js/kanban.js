@@ -11,6 +11,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // WebSocket接続を初期化
 function initializeWebSocket() {
+    if (window.USE_KANBAN_POLLING === true) {
+        console.log('[Kanban] WebSocket 初期化スキップ (ロングポーリングモード)');
+        return;
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/notifications/`;
     
