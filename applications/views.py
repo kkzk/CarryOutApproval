@@ -367,9 +367,11 @@ def admin_application_list(request):
 @login_required
 def my_applications(request):
     """自分の申請一覧"""
-    applications = Application.objects.filter(
-    applicant=request.user.username
-    ).order_by('-created_at')
+    applications = (
+        Application.objects
+        .filter(applicant=request.user.username)
+        .order_by('-created_at')
+    )
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -388,9 +390,11 @@ def my_applications(request):
 @login_required
 def my_applications_board(request):
     """自分の申請状況ボード（申請者として）"""
-    applications = Application.objects.filter(
-    applicant=request.user.username
-    ).order_by('-created_at')
+    applications = (
+        Application.objects
+        .filter(applicant=request.user.username)
+        .order_by('-created_at')
+    )
     
     # ステータスごとに分類
     pending_applications = applications.filter(status=ApprovalStatus.PENDING)
@@ -412,10 +416,14 @@ def my_applications_board(request):
 @login_required
 def pending_approvals(request):
     """承認待ち申請一覧（承認者として）"""
-    applications = Application.objects.filter(
-    approver=request.user.username,
-        status=ApprovalStatus.PENDING
-    ).order_by('-created_at')
+    applications = (
+        Application.objects
+        .filter(
+            approver=request.user.username,
+            status=ApprovalStatus.PENDING,
+        )
+        .order_by('-created_at')
+    )
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -435,9 +443,11 @@ def pending_approvals(request):
 @login_required
 def approval_board(request):
     """承認管理ボード（承認者として）"""
-    applications = Application.objects.filter(
-    approver=request.user.username
-    ).order_by('-created_at')
+    applications = (
+        Application.objects
+        .filter(approver=request.user.username)
+        .order_by('-created_at')
+    )
     
     # ステータスごとに分類
     pending_applications = applications.filter(status=ApprovalStatus.PENDING)
@@ -459,9 +469,12 @@ def approval_board(request):
 @login_required
 def my_approval_history(request):
     """承認履歴（承認者として）"""
-    applications = Application.objects.filter(
-    approver=request.user.username
-    ).exclude(status=ApprovalStatus.PENDING).order_by('-updated_at')
+    applications = (
+        Application.objects
+        .filter(approver=request.user.username)
+        .exclude(status=ApprovalStatus.PENDING)
+        .order_by('-updated_at')
+    )
     
     # ページネーション
     from django.core.paginator import Paginator
