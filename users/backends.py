@@ -1,26 +1,13 @@
-# Windows compatible LDAP backend using ldap3
-#
-# 主な接続失敗・認証失敗の原因と、それに対応するログメッセージの例です。
-#
-# 1. サーバーのアドレスやポートが間違っている
-#   - ログ例: `desc=Can't contact LDAP server`
-#   - 発生箇所: Bind (接続試行) 時
-#
-# 2. 認証情報 (ユーザー名/パスワード) が無効
-#   - ログ例: `desc=invalidCredentials`
-#   - 発生箇所: Bind (認証) 時
-#   - 補足: Active Directory から返されるエラーコード (例: 52e) があります。
-#
-# 3. ネットワーク接続の問題 (ファイアウォール、VPN など)
-#   - ログ例: `desc=Connect error` または `desc=Can't contact LDAP server`
-#   - 発生箇所: StartTLS や Bind (接続試行) 時
-#   - 補足: タイムアウトや接続拒否が発生します。
-#
-# 4. STARTTLS の失敗 (証明書の問題など)
-#   - ログ例: `LDAP StartTLS failed ... desc=Connect error`
-#   - 発生箇所: StartTLS 実行時
-#   - 補足: サーバーがSTARTTLSをサポートしていない、またはクライアントがサーバー証明書を検証できない場合に発生します。
-#
+"""Windows compatible LDAP backend using ldap3.
+
+ユーザー表示エラー分類 (各 2 文: 要約。対処。):
+dns         : ActiveDirectory サーバが見つかりません。/ 【保守担当】アプリケーションサーバの DNS 設定を確認してください。
+unreachable : ActiveDirectory サーバに到達できません。/ 【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。
+tls         : ネットワークレベルの暗号化が要求されました。/ 【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。
+credentials : IDまたはパスワードが違います。/ 正しいIDおよびパスワードを入力してください。
+
+コード内コメントで # dns / # unreachable / # tls / # credentials を付記。
+"""
 
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
@@ -28,6 +15,7 @@ from django.contrib import messages
 from django.conf import settings
 import logging
 import re
+from .error_catalog import AuthErrorCode, compose_message
 from urllib.parse import urlparse
 from typing import List, Tuple, Optional, Iterable, Any, cast
 from dataclasses import dataclass
@@ -64,35 +52,39 @@ class LDAPRuntimeConfig:
         )
 
 
-# Django標準の方法でロガーを取得
-logger = logging.getLogger('django.security.authentication')
+# ロガー
+logger = logging.getLogger('django.security.authentication')  # 既存 WARNING/INFO 用
+dbg_logger = logging.getLogger('users.backends')  # 詳細デバッグ用 (LOGGING で DEBUG レベル指定済)
 
 
 class WindowsLDAPBackend(ModelBackend):
     """Windows対応 LDAP 認証バックエンド (ldap3)。
 
     ポリシー:
-      - 管理用固定サービスアカウントを持たず、利用者資格情報で直接バインド
-      - LDAPS / StartTLS を優先 (設定で明示無い場合は StartTLS を強制)
-      - バインド候補生成順: as-is(入力形式) > NTLM(domain\\user) > UPN(constructed)
+        - 管理用固定サービスアカウントを持たず、利用者資格情報で直接バインド
+        - LDAPS / StartTLS を優先 (設定で明示無い場合は StartTLS を強制)
+        - バインド候補生成順: as-is(入力形式) > NTLM(domain\\user) > UPN(constructed)
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
-        """認証フロー (現行ポリシー要約)
+        """認証フロー (現行ポリシー要約 / 仕様 v2)
 
         ゴール:
-          - 開発/試験用の明示パターンに合致する `username` は LDAP 問い合わせ不要。
+            - 非 LDAP ユーザ (source!=LDAP) はプレフィックス許可 & PW 一致時のみ成功し、失敗時は LDAP 試行なしで終了。
+            - LDAP ユーザ (source==LDAP) または未登録ユーザのみ LDAP に問い合わせ。
 
         手順:
-          A. username/password 無し → None
-          B. ローカルユーザ取得
-          C. パターン & 非LDAP ならローカルPW先行 (成功で return)
-          D. LDAP 認証 (成功で return)
-          E. 失敗: メッセージ付与し None
+            A. username/password 無し → None
+            B. ローカルユーザ取得
+            C. ローカルユーザ & source!=LDAP:
+                 C1. プレフィックス一致 & パスワード一致 → 成功
+                 C2. 上記以外 → 失敗 (LDAP へは行かない)
+            D. (未登録 or source==LDAP) → LDAP 認証
+            E. 失敗時: メッセージ付与し None
 
-        セキュリティ:
-          - source==LDAP は常に AD でのみ検証
-          - パターンは本番で空リスト運用
+        影響 (仕様v1との差分):
+            - v1 では非LDAPユーザのパスワード不一致時に LDAP へフォールバックする余地があったが排除。
+            - ローカル先取り後に LDAP アカウントが後から作成されても自動昇格しない (運用で変換が必要)。
         """
         # (A) username/password 無し → None
         if not username or not password:
@@ -106,21 +98,37 @@ class WindowsLDAPBackend(ModelBackend):
             local_user = None
 
         # (C) local-first: パターン & 非LDAPユーザ
-        patterns = getattr(settings, 'AUTH_LOCAL_FIRST_PATTERNS', []) or []
-        if local_user is not None and patterns:
+        prefixes = getattr(settings, 'AUTH_LOCAL_FIRST_PREFIXES', []) or []  # list[str]
+        dbg_logger.debug(
+            "Local-first precheck | user=%s exists=%s prefixes=%s", username, local_user is not None, prefixes
+        )
+        if local_user is not None:
+            from .models import UserSource
             try:
-                from .models import UserSource  # 遅延 import
-                is_ldap_user = (getattr(local_user, 'source', None) == getattr(UserSource, 'LDAP', None))
-            except Exception:
-                is_ldap_user = True  # 判定不能時は安全側 (local-first 不可)
+                user_source = local_user.source  # type: ignore[attr-defined]
+            except AttributeError:
+                dbg_logger.warning("User has no 'source' attribute (treat as LDAP) | user=%s", username)
+                user_source = 'UNKNOWN'
+                is_ldap_user = True
+            else:
+                is_ldap_user = (user_source == UserSource.LDAP)
+            dbg_logger.debug(
+                "Local-first user info | user=%s source=%s is_ldap_user=%s usable=%s",
+                username, user_source, is_ldap_user, local_user.has_usable_password()
+            )
             if not is_ldap_user:
-                for p in patterns:
-                    try:
-                        if re.match(p, username) and local_user.check_password(password):
-                            logger.info("Local-first auth success | user=%s pattern=%s", username, p)
-                            return local_user
-                    except re.error:
-                        logger.warning("Invalid regex in AUTH_LOCAL_FIRST_PATTERNS | pattern=%s", p)
+                # 仕様変更: 非LDAPユーザは LDAP に問い合わせない。
+                if not (prefixes and any(username.startswith(p) for p in prefixes)):
+                    dbg_logger.debug("Non-LDAP user without allowed prefix -> auth fail (no LDAP query) | user=%s", username)
+                    return None
+                dbg_logger.debug("Local-first prefix matched | user=%s prefixes=%s", username, prefixes)
+                if local_user.check_password(password):
+                    logger.info("Local-first auth success | user=%s", username)
+                    return local_user
+                dbg_logger.debug("Local-first password mismatch (non-LDAP user, no LDAP fallback) | user=%s", username)
+                return None
+            else:
+                dbg_logger.debug("Local-first skipped (LDAP sourced user) | user=%s", username)
 
         # (D) LDAP 認証
         user, auth_result = self._authenticate_ldap3(username, password)
@@ -175,7 +183,7 @@ class WindowsLDAPBackend(ModelBackend):
             if not candidates:
                 # 早期終了: 生成条件に合致する資格文字列が一つも無い (入力形式 + 設定不足)
                 self._log_no_candidates(username, cfg.domain, cfg.upn_suffix, cfg.use_ssl, force_starttls, cfg.allow_plain)
-                return None, "認証に必要なドメイン情報が不足しています。システム管理者に連絡してください。"
+                return None, compose_message(AuthErrorCode.DOMAIN_INFO_MISSING)
             
             logger.debug("LDAP bind candidates | user=%s candidates=%s", username, [(c[0], c[1]) for c in candidates])
             for label, bind_user, auth_kind in candidates:
@@ -194,10 +202,7 @@ class WindowsLDAPBackend(ModelBackend):
                 )
                 # 特殊ケース: エントリ無し (bind 成功だが検索 0 件) → 全体として None を確定
                 if user is False:  # sentinel (検索なし早期終了)
-                    return None, (
-                        "【LDAPユーザー未登録】LDAPには接続できましたが該当ユーザー情報が見つかりません。"  # 事象概要
-                        "運用窓口へ『LDAPにユーザー未登録（追加/同期要確認）』と連絡してください。"
-                    )
+                    return None, compose_message(AuthErrorCode.LDAP_USER_NOT_FOUND)
                 # User インスタンスが返れば成功
                 if user is not None:
                     return user, None
@@ -211,10 +216,10 @@ class WindowsLDAPBackend(ModelBackend):
             
         except ImportError:  # noqa: BLE001
             logger.exception("ldap3 not installed | user=%s", username)
-            return None, "認証システムの設定に問題があります。システム管理者に連絡してください。"
+            return None, compose_message(AuthErrorCode.DNS)  # dns
         except Exception:  # noqa: BLE001
             logger.exception("LDAP unexpected error | user=%s", username)
-            return None, "認証処理中に予期せぬエラーが発生しました。システム管理者に連絡してください。"
+            return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
 
     def _attempt_single_candidate(self, *, username, password, server, host, host_is_ip, cfg, force_starttls,
                                    label, bind_user, auth_kind, last_errors):
@@ -229,23 +234,23 @@ class WindowsLDAPBackend(ModelBackend):
         try:
             conn = self._prepare_connection(server, bind_user, password, auth_kind)
             if not cfg.use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
-                return None, "セキュアな接続（STARTTLS）の確立に失敗しました。"
-            
+                return None, compose_message(AuthErrorCode.TLS_REQUIRED)  # tls
+
             if not self._bind_connection(conn, host, host_is_ip, cfg.use_ssl, force_starttls, label, auth_kind, last_errors):
-                # 最後のエラーからメッセージを生成
                 if last_errors:
                     _, _, result = last_errors[-1]
                     if isinstance(result, dict) and result.get('description') == 'invalidCredentials':
-                        return None, "ユーザー名またはパスワードが正しくありません。"
-                return None, "LDAPサーバーへの接続に失敗しました。"
-            
+                        return None, compose_message(AuthErrorCode.CREDENTIALS)  # credentials
+                return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
+
             entry = self._search_user_entry(conn, username, host, label, cfg.search_base, last_errors)
             if not entry:
                 conn.unbind()
                 return False, None  # 認証は通ったがユーザが居ない
-            
+
             user = self._ensure_local_user(username, entry, cfg.upn_suffix, cfg.domain)
             self._sync_profile_from_ldap(user, entry)
+            self._provision_related_users(conn, entry, user, cfg, username)
             conn.unbind()
             logger.info(
                 "LDAP auth success | user=%s attempt=%s bind_user=%s host=%s",
@@ -259,13 +264,13 @@ class WindowsLDAPBackend(ModelBackend):
                 extra={'ldap': {'attempt': label}}
             )
             last_errors.append((label, str(e), {'description': 'exception'}))
-            return None, "認証処理中にエラーが発生しました。"
+            return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
             
     def _generate_user_friendly_error(self, last_errors):
         """エラーの詳細からユーザーに表示するメッセージを生成"""
         if not last_errors:
-            return "認証に失敗しました。"
-            
+            return compose_message(AuthErrorCode.UNREACHABLE)
+        
         # 直近のエラー (最後) を抽出
         _, last_error, last_result = last_errors[-1]
 
@@ -281,44 +286,29 @@ class WindowsLDAPBackend(ModelBackend):
                     return True
             return False
 
-        # ========== 分類ポリシー ==========
-        # カテゴリ1 (ユーザ自己解決): 資格情報誤り
-        # カテゴリ2 (運用窓口対応): ネットワーク不通 / LDAP接続はできたがユーザ未登録（このケースは呼び出し側で直接返却されるが保険）
-        # カテゴリ3 (保守SE): DNS解決不可 / 設定不足 / TLS失敗 (自己解決不可) / 想定外例外
+        # 分類: credentials / unreachable / dns / tls
 
         # --- 1) invalidCredentials ---
-        if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':
-            return (
-                "【資格情報誤り】ユーザー名またはパスワードが正しくありません。 "  # カテゴリ1
-                "入力を再確認し、CapsLock/VPN/IME状態を確認して再試行してください。"
-            )
+        if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':  # credentials
+            return compose_message(AuthErrorCode.CREDENTIALS)
 
         # --- 2) ネットワーク / 接続不可 ---
         if any_error_contains(
             "can't contact ldap server", "connect error", "socket connection error", "timeout", "timed out",
             "unreachable", "connection refused", "10060"
-        ):
-            return (
-                "【接続不可/タイムアウト】LDAPサーバーに到達できません (ネットワーク/接続エラー)。 "
-                "LAN/無線/VPN を確認し問題なければ、運用窓口へ『LDAPサーバーに接続不可 (ネットワーク不通/タイムアウト)』と連絡してください。"
-            )
+        ):  # unreachable
+            return compose_message(AuthErrorCode.UNREACHABLE)
 
         # --- 2b) サーバーアドレス不正 / DNS 解決不能 ---
-        if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):
-            return (
-                "【DNS解決不可】LDAPサーバーのホスト名/アドレスを解決できません。 "
-                "運用窓口へ『LDAPサーバー設定(ホスト名/ポート)要確認』と連絡してください。"
-            )
+        if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):  # dns
+            return compose_message(AuthErrorCode.DNS)
 
         # --- 3) StartTLS / TLS 関連 (ユーザ操作では解決困難) ---
-        if any_error_contains("starttls", "tls", "ssl"):
-            return (
-                "【暗号化初期化失敗】セキュア接続の初期化に失敗しました。 "  # カテゴリ3
-                "運用窓口経由で保守担当へ『LDAP StartTLS/SSL 失敗』と連絡してください。"
-            )
+        if any_error_contains("starttls", "tls", "ssl"):  # tls
+            return compose_message(AuthErrorCode.TLS_REQUIRED)
 
         # --- 4) その他の例外 (設定不足・不明) ---
-        return "【分類不能】認証に失敗しました。運用窓口へ状況を報告し、必要に応じて保守担当へエスカレーションしてください。"
+        return compose_message(AuthErrorCode.UNREACHABLE)  # fallback unreachable
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
@@ -514,32 +504,134 @@ class WindowsLDAPBackend(ModelBackend):
             return user
 
     def _sync_profile_from_ldap(self, user, entry):
-        """カスタムUserへ LDAP 属性差分を同期 (失敗しても例外抑止)."""
+        """LDAP 属性差分を同期し、DN から OU コードを自動抽出 (失敗しても例外抑止).
+
+        要件対応:
+          1. DN 最下層 OU (ユーザ直下) を所属コード (department_code) として保存
+          2. その 1 階層上の OU を parent_department_code として保存
+          (従来手動だった parent_department_code を自動化 / OU が不足する場合は空のまま)
+        """
         try:
             from .models import UserSource  # 遅延 import
             from django.utils import timezone
             new_dn = str(getattr(entry, 'distinguishedName', '') or '')
-            new_dept = str(getattr(entry, 'department', '') or '')
-            new_title = str(getattr(entry, 'title', '') or '')
-            changed = []
+            changed: list[str] = []
+
             if user.source != UserSource.LDAP:
                 user.source = UserSource.LDAP
                 changed.append('source')
-            if user.ldap_dn != new_dn:
+            if new_dn and user.ldap_dn != new_dn:
                 user.ldap_dn = new_dn
                 changed.append('ldap_dn')
-            if user.department_name != new_dept:
-                user.department_name = new_dept
-                changed.append('department_name')
-            if user.title != new_title:
-                user.title = new_title
-                changed.append('title')
+
+            # DN 解析: "CN=...,OU=Child,OU=Parent,DC=example,DC=com"
+            def extract_ou_levels(dn: str) -> tuple[str, str]:
+                try:
+                    parts = [p.strip() for p in dn.split(',') if p]
+                    # 最初に出現する OU= が最下層 (ユーザーに最も近い OU)
+                    first_ou_index = None
+                    for i, p in enumerate(parts):
+                        if p.upper().startswith('OU='):
+                            first_ou_index = i
+                            break
+                    if first_ou_index is None:
+                        return '', ''
+                    # same level OU 名
+                    same_ou_name = parts[first_ou_index][3:]
+                    # 1 階層上 OU 名 (連続して OU= が続く場合のみ)
+                    upper_ou_name = ''
+                    if first_ou_index + 1 < len(parts) and parts[first_ou_index + 1].upper().startswith('OU='):
+                        upper_ou_name = parts[first_ou_index + 1][3:]
+                    return same_ou_name, upper_ou_name
+                except Exception:  # noqa: BLE001
+                    return '', ''
+
+            same_ou_name, upper_ou_name = extract_ou_levels(new_dn)
+            if same_ou_name and user.department_code != same_ou_name:
+                user.department_code = same_ou_name
+                changed.append('department_code')
+            if upper_ou_name and user.parent_department_code != upper_ou_name:
+                user.parent_department_code = upper_ou_name
+                changed.append('parent_department_code')
+
             user.last_synced_at = timezone.now()
             if changed:
                 user.save(update_fields=list(set(changed + ['last_synced_at'])))
-                logger.info("LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed))
+                logger.info(
+                    "LDAP user fields changed | user=%s changed=%s", user.username, ','.join(changed)
+                )
         except Exception:  # noqa: BLE001
             logger.debug("User LDAPフィールド同期失敗をスキップ")
+
+    def _provision_related_users(self, conn, primary_entry, primary_user, cfg, current_username):
+        """同一 OU / 1階層上 OU の LDAP ユーザを検索しローカル User を必要に応じて生成。
+
+        モデル変更なしで後続の承認者選択候補を増やす目的。
+        再帰なし / 1階層のみ。
+        """
+        try:
+            dn = str(getattr(primary_entry, 'distinguishedName', '') or '')
+            if not dn:
+                return
+            parts = [p.strip() for p in dn.split(',') if p.strip()]
+            first_ou_idx = None
+            for i, p in enumerate(parts):
+                if p.upper().startswith('OU='):
+                    first_ou_idx = i
+                    break
+            if first_ou_idx is None:
+                return
+            same_ou_base = ','.join(parts[first_ou_idx:])  # OU=Child,OU=Parent,...
+            parent_ou_base = ''
+            if first_ou_idx + 1 < len(parts) and parts[first_ou_idx + 1].upper().startswith('OU='):
+                parent_ou_base = ','.join(parts[first_ou_idx + 1:])
+
+            from ldap3 import SUBTREE
+            # 検索共通定義
+            related_specs = [("same", same_ou_base), ("upper", parent_ou_base)]
+            for kind, base in related_specs:
+                if not base or 'OU=' not in base:
+                    continue
+                try:
+                    # 性能抑制: サイズ制限 (必要なら設定化) 50 ユーザまで
+                    if not conn.search(
+                        search_base=base,
+                        search_filter='(sAMAccountName=*)',
+                        search_scope=SUBTREE,
+                        attributes=['sAMAccountName', 'displayName', 'mail', 'distinguishedName', 'givenName', 'sn'],
+                        size_limit=50,
+                    ):
+                        continue
+                except Exception:  # noqa: BLE001
+                    continue
+                entries = getattr(conn, 'entries', [])
+                if not entries:
+                    continue
+                UserModel = get_user_model()
+                created = 0
+                for e in entries:
+                    try:
+                        uname = str(getattr(e, 'sAMAccountName', '') or '')
+                        if not uname or uname.lower() == current_username.lower():
+                            continue
+                        if UserModel.objects.filter(username=uname).exists():
+                            # 既存ユーザも DN 情報があれば同期
+                            u = UserModel.objects.get(username=uname)
+                            self._sync_profile_from_ldap(u, e)
+                            continue
+                        # 新規作成 → 最低限フィールド埋める
+                        u = self._ensure_local_user(uname, e, cfg.upn_suffix, cfg.domain)
+                        self._sync_profile_from_ldap(u, e)
+                        created += 1
+                    except Exception:  # noqa: BLE001
+                        continue
+                if created:
+                    logger.info(
+                        "LDAP related users provisioned | user=%s kind=%s created=%d base=%s", \
+                        current_username, kind, created, base
+                    )
+        except Exception:  # noqa: BLE001
+            logger.debug("関連ユーザ自動生成をスキップ (例外発生)")
 
     def _log_all_attempt_fail(self, username, host, host_is_ip, domain, last_errors, use_ssl, force_starttls):
         """全候補失敗時に試行概要と各試行詳細を詳細ログ出力."""

@@ -1,0 +1,62 @@
+{
+  "download_dir": "vendor_downloads",
+  "static_vendor_root": "static/vendor",
+  "libraries": [
+    {
+      "name": "bootstrap",
+      "version": "5.3.3",
+      "type": "zip",
+      "url": "https://github.com/twbs/bootstrap/releases/download/v5.3.3/bootstrap-5.3.3-dist.zip",
+      "zip_root": "bootstrap-5.3.3-dist",
+      "files": [
+        {"src": "css/bootstrap.min.css", "dest": "css/bootstrap.min.css"},
+        {"src": "js/bootstrap.bundle.min.js", "dest": "js/bootstrap.bundle.min.js"},
+        {"src": "LICENSE", "dest": "LICENSE"}
+      ]
+    },
+    {
+      "name": "fontawesome",
+      "version": "6.5.2",
+      "type": "zip",
+      "url": "https://github.com/FortAwesome/Font-Awesome/releases/download/6.5.2/fontawesome-free-6.5.2-web.zip",
+      "zip_root": "fontawesome-free-6.5.2-web",
+      "files": [
+        {"src": "css/all.min.css", "dest": "css/all.min.css"},
+        {"src": "LICENSE.txt", "dest": "LICENSE.txt"}
+      ],
+      "extra_dirs": ["webfonts"]
+    },
+    {
+      "name": "bootstrap-icons",
+      "version": "1.11.3",
+      "type": "zip",
+      "url": "https://github.com/twbs/icons/releases/download/v1.11.3/bootstrap-icons-1.11.3.zip",
+      "zip_root": "bootstrap-icons-1.11.3",
+      "files": [
+        {"src": "bootstrap-icons.css", "dest": "bootstrap-icons.css"},
+        {"src": "bootstrap-icons.min.css", "dest": "bootstrap-icons.min.css"},
+        {"src": "LICENSE.md", "dest": "LICENSE.md"}
+      ],
+      "extra_dirs": ["font"]
+    },
+    {
+      "name": "htmx",
+      "version": "1.9.12",
+      "type": "single",
+      "url": "https://github.com/bigskysoftware/htmx/releases/download/v1.9.12/htmx.min.js",
+      "single_file_name": "htmx.min.js"
+    },
+    {
+      "name": "sortablejs",
+      "version": "1.15.6",
+      "type": "zip",
+      "url": "https://github.com/SortableJS/Sortable/archive/refs/tags/1.15.6.zip",
+      "zip_root": "Sortable-1.15.6",
+      "files": [
+        {"src": "Sortable.min.js", "dest": "Sortable.min.js"},
+        {"src": "Sortable.js", "dest": "Sortable.js"},
+        {"src": "LICENSE", "dest": "LICENSE"}
+      ]
+    }
+  ]
+}

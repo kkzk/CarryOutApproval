@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from decouple import config
+from decouple import config, Csv
 import os
 # import ldap
 # from django_auth_ldap.config import LDAPSearch
@@ -204,13 +204,34 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',  # Djangoデフォルト
 ]
 
-# ローカル認証を LDAP より先に試すユーザ名パターン (正規表現) ※本番では空リスト推奨
-# デフォルトで Django 標準 'admin' と、開発用に 'local_*', 'dev_*' を許可
-AUTH_LOCAL_FIRST_PATTERNS = [
-    r'^admin$',
-    r'^local_.*$',
-    r'^dev_.*$',
-]
+
+"""Local-first 認証プレフィックス設定.
+
+目的:
+    開発/検証環境で一部ユーザ (admin / local_ / dev_) を LDAP より先にローカル PW で照合し
+    LDAP 接続を避ける (速度・検証容易性)。
+
+方針 (簡素化):
+    - 正規表現を廃止しシンプルな先頭一致 (str.startswith) のみ
+    - 本番では空リスト (機能無効) を強制的に維持
+    - 変更はコード履歴に残す (.env 非依存)
+
+編集ガイド: DEBUG=True ブロックのリストに prefix を追加する。
+"""
+import logging as _logging
+
+if DEBUG:  # 開発/検証用デフォルト
+        AUTH_LOCAL_FIRST_PREFIXES: list[str] = [
+                'admin',   # 完全一致 'admin' も startswith('admin') でマッチ
+                'local_',
+                'dev_',
+        ]
+else:  # 本番/ステージング等: 無効
+        AUTH_LOCAL_FIRST_PREFIXES: list[str] = []
+
+_logging.getLogger('users.backends').debug(
+        'AUTH_LOCAL_FIRST_PREFIXES = %s', AUTH_LOCAL_FIRST_PREFIXES
+)
 
 # Logging settings for LDAP debugging
 LOGGING = {

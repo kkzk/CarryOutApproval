@@ -12,7 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id', 'username', 'first_name', 'last_name', 
-            'full_name', 'email', 'department_code'
+            'full_name', 'email', 'department_code', 'parent_department_code'
         )
     
     def get_full_name(self, obj):

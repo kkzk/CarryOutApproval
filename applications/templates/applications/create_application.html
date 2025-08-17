@@ -50,7 +50,7 @@
                                     </div>
                                     <div class="d-flex justify-content-between align-items-center mt-1">
                                         <div class="form-text mb-0">同一OU階層のメンバーから承認者を選択してください。</div>
-                                        <button type="button" id="approverResyncBtn" class="btn btn-sm btn-outline-secondary">再同期</button>
+                                        <!-- 再同期ボタン撤去: LDAP再検索廃止 -->
                                     </div>
                                     {% if form.errors.approver %}
                                         <div class="invalid-feedback d-block">
@@ -200,12 +200,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const approverSearch = document.getElementById('approverSearch');
     const approverHidden = document.getElementById('approverHidden');
     const approverDropdown = document.getElementById('approverDropdown');
-    const resyncBtn = document.getElementById('approverResyncBtn');
-    if (!resyncBtn) {
-        console.warn('[create_application] resync button not found');
-    } else {
-        console.log('[create_application] resync button found');
-    }
+    // 再同期ボタン撤去
 
     function renderApproverList(keyword='') {
         const kw = keyword.trim().toLowerCase();
@@ -244,34 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
             approverDropdown.style.display = 'none';
         }
     });
-    // 再同期
-    resyncBtn.addEventListener('click', async () => {
-        resyncBtn.disabled = true;
-        const original = resyncBtn.textContent;
-        resyncBtn.textContent = '同期中...';
-            console.log('[create_application] resync click');
-        try {
-            const resp = await fetch('/users/approvers/resync/', {credentials: 'same-origin'});
-                console.log('[create_application] fetch /users/approvers/resync/ start');
-            if (!resp.ok) throw new Error('sync failed');
-            const data = await resp.json();
-                console.log('[create_application] fetch status', resp.status);
-            if (data.ok) {
-                approverCandidates.length = 0; // 既存配列をクリア
-                data.candidates.forEach(c => approverCandidates.push(c));
-                renderApproverList(approverSearch.value);
-                    console.log('[create_application] candidates updated count=' + approverCandidates.length);
-            } else {
-                alert('再同期に失敗: ' + (data.error || 'unknown'));
-            }
-        } catch (e) {
-            console.error(e);
-            alert('再同期エラー');
-        } finally {
-            resyncBtn.disabled = false;
-            resyncBtn.textContent = original;
-        }
-    });
+    // 再同期処理削除済み
     // 既存値の再表示
     if (approverHidden.value) {
         const candidate = approverCandidates.find(a => a.username === approverHidden.value);

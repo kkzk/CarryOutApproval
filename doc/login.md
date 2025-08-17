@@ -240,7 +240,6 @@ Using the URLconf defined in carry_out_approval.urls, Django tried these URL pat
   users/ sessions/ [name='session-management']
   users/ me/ [name='current-user']
   users/ search/ [name='user-search']
-  users/ approvers/resync/ [name='approvers-resync']
   applications/
   api/audit/
   api/notifications/
@@ -275,7 +274,6 @@ urlpatterns = [
     path('sessions/', views.SessionManagementView.as_view(), name='session-management'),
     path('me/', views.CurrentUserView.as_view(), name='current-user'),
     path('search/', views.UserSearchView.as_view(), name='user-search'),
-    path('approvers/resync/', views.resync_and_fetch_approvers, name='approvers-resync'),
 ]
 ```
 

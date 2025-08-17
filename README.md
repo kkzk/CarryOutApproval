@@ -218,6 +218,58 @@ LDAP_TLS_INSECURE = True          # 証明書検証を一時的に無効 (自己
 
 参考: ブログ記事 *"Windows Server 2025 の Active Directory では LDAP 署名が既定で必須に"* (要旨のみ反映 / 詳細は原文参照)。
 
+### Active Directory テストデータ (OU/ユーザ) 登録コマンド
+
+開発/検証用に Active Directory に OU / ユーザを一括登録する管理コマンドを追加しています。
+
+```
+uv run python manage.py register_ad_data --file users/management/data/ldap_testdata.json --dry-run --debug-log
+```
+
+主なオプション:
+- `--file/-f` JSON ファイル (既定: `users/management/data/ldap_testdata.json`)
+- `--default-password` JSON 内で `userPassword` 未指定ユーザの既定パスワード
+- `--dry-run` 変更を加えず計画のみ表示 (本番前に必須)
+- `--debug-log` 詳細ログ (DEBUG)
+
+必要設定 (settings.py または 環境変数 / .env):
+- `LDAP_SERVER_URL` (例: `ldaps://dc01.example.com:636` または `ldap://dc01.example.com:389`)
+- `LDAP_SEARCH_BASE` (例: `DC=example,DC=com`)
+- `LDAP_SERVICE_USER` (サービスアカウント DN / UPN / DOMAIN\\user いずれか)
+- `LDAP_SERVICE_PASSWORD`
+
+後方互換で旧キーも利用可: `AD_SERVER`, `AD_BASE_DN`, `AD_ADMIN_DN`, `AD_ADMIN_PASSWORD`, `AD_USE_SSL`, `AD_STARTTLS`。
+
+実行例 (本番反映):
+```
+uv run python manage.py register_ad_data -f users/management/data/ldap_testdata.json --default-password TempPassw0rd! 
+```
+
+注意:
+1. OU / ユーザは既に存在する場合はスキップ (冪等)
+2. `--dry-run` で差分を必ず確認
+3. サービスアカウントには OU/ユーザ作成権限が必要
+4. パスワードは後から期限付き変更を促す設計 (pwdLastSet=0)
+
+旧スクリプト群は `register_testuser/` で廃止済みです。データファイルは `users/management/data/ldap_testdata.json` へ移動しました。
+
+#### AD テストユーザ削除コマンド
+
+登録済みテストユーザを削除する管理コマンド:
+
+```
+uv run python manage.py delete_ad_users --dry-run
+uv run python manage.py delete_ad_users --users user001,user002 --debug-log
+uv run python manage.py delete_ad_users --users user003 --users user004
+```
+
+オプション:
+- `--users` 指定が無い場合は `user001..user005` を対象
+- `--dry-run` 実行計画のみ表示 (推奨)
+- `--debug-log` 詳細ログ
+
+DN をハードコードせず `sAMAccountName` 検索で取得するため OU 移動後でも削除可能です。
+
 ## アクセス方法
 
 - **カンバンボード**: http://localhost:8000
@@ -230,14 +282,23 @@ LDAP_TLS_INSECURE = True          # 証明書検証を一時的に無効 (自己
 
 ## テストユーザー
 
-開発用に以下のテストユーザーが利用できます：
+開発用に以下のテストユーザーが利用できます。
 
-| ユーザーID | パスワード | 名前 | 所属コード | 役割 |
-|-----------|-----------|------|-----------|------|
-| admin | admin123 | 管理者 | ADMIN | スーパーユーザー |
-| user001 | password123 | 田中太郎 | DEPT001 | 一般ユーザー |
-| user002 | password123 | 佐藤花子 | DEPT002 | 一般ユーザー |
-| user003 | password123 | 鈴木一郎 | DEPT001 | 一般ユーザー |
+**想定する OU の構造**
+
+```
+DEPT1000/
+└── DEPT1000100/
+```
+
+**テストユーザ**
+
+| ユーザーID | パスワード | 名前     | 所属コード(OU名) | 役割                           |
+| ---------- | ---------- | -------- | ---------------- | ------------------------------ |
+| admin      | admin123   | 管理者   |                  | スーパーユーザー(OU内には不在) |
+| user001    | pass001    | 田中太郎 | DEPT1000100      | 一般ユーザー                   |
+| user002    | pass002    | 佐藤花子 | DEPT1000100      | 一般ユーザー                   |
+| user003    | pass003    | 鈴木一郎 | DEPT1000         | 上位ユーザー                   |
 
 ## ファイル構成
 
@@ -707,3 +768,8 @@ cd CarryOutApproval
 - **ドキュメント**: `/docs/` ディレクトリの詳細仕様
 - **API仕様**: OpenAPI/Swagger 対応予定
 - **開発ガイド**: 新機能開発のベストプラクティス
+
+# コーディング方針
+
+- 一般的運用では「マイグレーション適用済み前提」で冗長防御は減らし、失敗は早期に顕在化させる。
+- 外部サービス境界(LDAP通信)は詳細フェイルセーフ/分類を厚く、内部モデル属性はシンプルに。

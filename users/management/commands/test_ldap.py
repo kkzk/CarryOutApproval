@@ -42,8 +42,7 @@ class Command(BaseCommand):
                     self.stdout.write(f'Full Name: {user.first_name} {user.last_name}')
                     if getattr(user, 'ldap_dn', None):
                         self.stdout.write(f'LDAP DN: {user.ldap_dn}')
-                        self.stdout.write(f'Department: {user.department_name}')
-                        self.stdout.write(f'Title: {user.title}')
+                        # department_name / title は廃止済みフィールドのため出力抑止
                         self.stdout.write('\nTesting approver search...')
                         approvers = get_approvers_for_user(user)
                         if approvers:

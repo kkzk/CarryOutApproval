@@ -29,15 +29,11 @@ class User(AbstractUser):
         verbose_name="所属コード",
         blank=True
     )
-    department_name = models.CharField(
-        max_length=100,
-        verbose_name="所属名",
-        blank=True
-    )
-    title = models.CharField(
-        max_length=100,
-        verbose_name="役職",
-        blank=True
+    parent_department_code = models.CharField(
+        max_length=20,
+        verbose_name="上位所属コード",
+        blank=True,
+        help_text="所属の上位階層コード (手動設定)"
     )
     last_synced_at = models.DateTimeField(
         null=True,

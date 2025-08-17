@@ -13,7 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             'id', 'username', 'first_name', 'last_name', 'full_name',
-            'department_code', 'department_name', 'title'
+            'department_code', 'parent_department_code'
         )
 
     def get_full_name(self, obj):
@@ -54,8 +54,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
                 'last_name': '',
                 'full_name': username,
                 'department_code': '',
-                'department_name': '',
-                'title': ''
+                'parent_department_code': ''
             }
 
     def get_applicant(self, obj):
