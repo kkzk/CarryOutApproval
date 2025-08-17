@@ -15,6 +15,7 @@ from django.contrib import messages
 from django.conf import settings
 import logging
 import re
+from .error_catalog import AuthErrorCode, compose_message
 from urllib.parse import urlparse
 from typing import List, Tuple, Optional, Iterable, Any, cast
 from dataclasses import dataclass
@@ -182,7 +183,7 @@ class WindowsLDAPBackend(ModelBackend):
             if not candidates:
                 # 早期終了: 生成条件に合致する資格文字列が一つも無い (入力形式 + 設定不足)
                 self._log_no_candidates(username, cfg.domain, cfg.upn_suffix, cfg.use_ssl, force_starttls, cfg.allow_plain)
-                return None, "認証に必要なドメイン情報が不足しています。システム管理者に連絡してください。"
+                return None, compose_message(AuthErrorCode.DOMAIN_INFO_MISSING)
             
             logger.debug("LDAP bind candidates | user=%s candidates=%s", username, [(c[0], c[1]) for c in candidates])
             for label, bind_user, auth_kind in candidates:
@@ -201,10 +202,7 @@ class WindowsLDAPBackend(ModelBackend):
                 )
                 # 特殊ケース: エントリ無し (bind 成功だが検索 0 件) → 全体として None を確定
                 if user is False:  # sentinel (検索なし早期終了)
-                    return None, (
-                        "【LDAPユーザー未登録】LDAPには接続できましたが該当ユーザー情報が見つかりません。"  # 事象概要
-                        "運用窓口へ『LDAPにユーザー未登録（追加/同期要確認）』と連絡してください。"
-                    )
+                    return None, compose_message(AuthErrorCode.LDAP_USER_NOT_FOUND)
                 # User インスタンスが返れば成功
                 if user is not None:
                     return user, None
@@ -218,10 +216,10 @@ class WindowsLDAPBackend(ModelBackend):
             
         except ImportError:  # noqa: BLE001
             logger.exception("ldap3 not installed | user=%s", username)
-            return None, "ActiveDirectory サーバが見つかりません。【保守担当】アプリケーションサーバの DNS 設定を確認してください。"  # dns
+            return None, compose_message(AuthErrorCode.DNS)  # dns
         except Exception:  # noqa: BLE001
             logger.exception("LDAP unexpected error | user=%s", username)
-            return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
+            return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
 
     def _attempt_single_candidate(self, *, username, password, server, host, host_is_ip, cfg, force_starttls,
                                    label, bind_user, auth_kind, last_errors):
@@ -236,24 +234,22 @@ class WindowsLDAPBackend(ModelBackend):
         try:
             conn = self._prepare_connection(server, bind_user, password, auth_kind)
             if not cfg.use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
-                return None, "ネットワークレベルの暗号化が要求されました。【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。"  # tls
-            
+                return None, compose_message(AuthErrorCode.TLS_REQUIRED)  # tls
+
             if not self._bind_connection(conn, host, host_is_ip, cfg.use_ssl, force_starttls, label, auth_kind, last_errors):
-                # 最後のエラーからメッセージを生成
                 if last_errors:
                     _, _, result = last_errors[-1]
                     if isinstance(result, dict) and result.get('description') == 'invalidCredentials':
-                        return None, "IDまたはパスワードが違います。正しいIDおよびパスワードを入力してください。"  # credentials
-                return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
-            
+                        return None, compose_message(AuthErrorCode.CREDENTIALS)  # credentials
+                return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
+
             entry = self._search_user_entry(conn, username, host, label, cfg.search_base, last_errors)
             if not entry:
                 conn.unbind()
                 return False, None  # 認証は通ったがユーザが居ない
-            
+
             user = self._ensure_local_user(username, entry, cfg.upn_suffix, cfg.domain)
             self._sync_profile_from_ldap(user, entry)
-            # 同一 OU / 親 OU の関連ユーザを M2M なしでローカル User として確保
             self._provision_related_users(conn, entry, user, cfg, username)
             conn.unbind()
             logger.info(
@@ -268,13 +264,13 @@ class WindowsLDAPBackend(ModelBackend):
                 extra={'ldap': {'attempt': label}}
             )
             last_errors.append((label, str(e), {'description': 'exception'}))
-            return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
+            return None, compose_message(AuthErrorCode.UNREACHABLE)  # unreachable
             
     def _generate_user_friendly_error(self, last_errors):
         """エラーの詳細からユーザーに表示するメッセージを生成"""
         if not last_errors:
-            return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
-            
+            return compose_message(AuthErrorCode.UNREACHABLE)
+        
         # 直近のエラー (最後) を抽出
         _, last_error, last_result = last_errors[-1]
 
@@ -290,29 +286,29 @@ class WindowsLDAPBackend(ModelBackend):
                     return True
             return False
 
-    # 分類: credentials / unreachable / dns / tls
+        # 分類: credentials / unreachable / dns / tls
 
         # --- 1) invalidCredentials ---
         if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':  # credentials
-            return "IDまたはパスワードが違います。正しいIDおよびパスワードを入力してください。"
+            return compose_message(AuthErrorCode.CREDENTIALS)
 
         # --- 2) ネットワーク / 接続不可 ---
         if any_error_contains(
             "can't contact ldap server", "connect error", "socket connection error", "timeout", "timed out",
             "unreachable", "connection refused", "10060"
         ):  # unreachable
-            return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"
+            return compose_message(AuthErrorCode.UNREACHABLE)
 
         # --- 2b) サーバーアドレス不正 / DNS 解決不能 ---
         if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):  # dns
-            return "ActiveDirectory サーバが見つかりません。【保守担当】アプリケーションサーバの DNS 設定を確認してください。"
+            return compose_message(AuthErrorCode.DNS)
 
         # --- 3) StartTLS / TLS 関連 (ユーザ操作では解決困難) ---
         if any_error_contains("starttls", "tls", "ssl"):  # tls
-            return "ネットワークレベルの暗号化が要求されました。【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。"
+            return compose_message(AuthErrorCode.TLS_REQUIRED)
 
         # --- 4) その他の例外 (設定不足・不明) ---
-        return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # fallback unreachable
+        return compose_message(AuthErrorCode.UNREACHABLE)  # fallback unreachable
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
