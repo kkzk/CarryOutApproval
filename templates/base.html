@@ -421,6 +421,10 @@
     </script>
     
     <!-- Custom JS -->
+    <script>
+        // サーバ設定からリアルタイム方式フラグを埋め込み (安全な単純代入)
+        window.USE_KANBAN_POLLING = {{ LONG_POLLING_ENABLED|yesno:'true,false' }};
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

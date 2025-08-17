@@ -61,6 +61,10 @@ INSTALLED_APPS = [
 # 通知機能 ON/OFF フラグ
 NOTIFICATIONS_ENABLED = config('NOTIFICATIONS_ENABLED', default=True, cast=bool)
 
+# リアルタイム通知方式切替フラグ (段階的移行)
+# True: ロングポーリングをデフォルト使用 / False: WebSocket (従来)
+LONG_POLLING_ENABLED = config('LONG_POLLING_ENABLED', default=True, cast=bool)
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -93,6 +97,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'notifications.context_processors.long_polling_flag',
             ],
         },
     },
