@@ -71,7 +71,7 @@ skip_glob = ["*/migrations/*"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "carry_out_approval.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-testpaths = ["django"]
+testpaths = ["applications"]
 
 # Uvの設定
 [tool.uv]
