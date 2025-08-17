@@ -19,29 +19,43 @@ from __future__ import annotations
 from typing import List, Dict, Tuple
 import re
 from django.contrib import messages as dj_messages
+from .error_catalog import AuthErrorCode, compose_message
 
-UNREACHABLE_PATTERNS = [
-    re.compile(r"ActiveDirectory サーバに到達できません"),
-]
-DNS_PATTERNS = [
-    re.compile(r"ActiveDirectory サーバが見つかりません"),
-]
-TLS_PATTERNS = [
-    re.compile(r"ネットワークレベルの暗号化が要求されました"),
-]
-CREDENTIAL_PATTERNS = [
-    re.compile(r"IDまたはパスワードが違います"),
-]
+# ---------------- 動的分類テーブル ----------------
+# error_catalog の文言変更影響を最小化するため、コード→文言(1文目)を起点に分類。
+# 1文目が一致 (or で始まる) すれば該当カテゴリ。未該当は other。
+
+def _first_sentence(msg: str) -> str:
+    msg = msg.strip()
+    if not msg:
+        return msg
+    # 最初の '。' までを含めた一文; 無ければ全体
+    if '。' in msg:
+        return msg.split('。', 1)[0] + '。'
+    return msg
+
+_CATEGORY_BY_CODE = {
+    AuthErrorCode.UNREACHABLE: "unreachable",
+    AuthErrorCode.DNS: "dns",
+    AuthErrorCode.TLS_REQUIRED: "tls",
+    AuthErrorCode.CREDENTIALS: "credentials",
+    # その他のコードは "other" にフォールバック
+}
+
+# (summary_sentence, category) のリスト (順序安定)
+_SUMMARY_CATEGORY: List[Tuple[str, str]] = []
+for code, cat in _CATEGORY_BY_CODE.items():
+    full = compose_message(code)
+    summary = _first_sentence(full)
+    if summary:  # 重複防止 (同一 summary が複数コードなら最初優先)
+        if not any(existing == summary for existing, _ in _SUMMARY_CATEGORY):
+            _SUMMARY_CATEGORY.append((summary, cat))
 
 def _classify(full: str) -> str:
-    if any(p.search(full) for p in UNREACHABLE_PATTERNS):
-        return "unreachable"
-    if any(p.search(full) for p in DNS_PATTERNS):
-        return "dns"
-    if any(p.search(full) for p in TLS_PATTERNS):
-        return "tls"
-    if any(p.search(full) for p in CREDENTIAL_PATTERNS):
-        return "credentials"
+    s = _first_sentence(full)
+    for summary, cat in _SUMMARY_CATEGORY:
+        if full.startswith(summary):  # summary は末尾 '。' 付き
+            return cat
     return "other"
 
 def build_login_feedback(request) -> Dict[str, List]:  # noqa: D401
