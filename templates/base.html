@@ -391,25 +391,6 @@
                     localStorage.setItem('sidebarState', isHidden ? 'hidden' : 'visible');
                 });
             }
-
-            // WebSocketステータスを指定のWebSocketインスタンスに紐づけ
-            window.bindWsStatus = function(ws) {
-                const dot = document.querySelector('.ws-status-dot');
-                if (!ws || !dot) return;
-                const setState = (state, title) => {
-                    dot.className = 'ws-status-dot ws-state-' + state;
-                    const wrapper = dot.parentElement;
-                    wrapper.setAttribute('data-bs-original-title', title);
-                    const tip = bootstrap.Tooltip.getInstance(wrapper);
-                    if (tip) tip.update();
-                };
-                setState('connecting','リアルタイム通信: 接続中');
-                ws.addEventListener('open', () => setState('open','リアルタイム通信: 接続中 (ON)'));
-                ws.addEventListener('close', () => setState('closed','リアルタイム通信: 切断 (OFF)'));
-                ws.addEventListener('error', () => setState('error','リアルタイム通信: エラー'));
-                if (ws.readyState === 1) setState('open','リアルタイム通信: 接続中 (ON)');
-                if (ws.readyState > 1) setState('closed','リアルタイム通信: 切断 (OFF)');
-            };
         });
     </script>
     
