@@ -44,7 +44,17 @@ def poll_kanban_updates(request):
     changes が空配列の場合はタイムアウトもしくは変化無し。
     """
     from applications.models import Application
-    from applications.serializers import ApplicationSerializer
+    from rest_framework import serializers
+    from applications.models import Application
+
+    # 軽量シリアライザ: 必要最小限のみ返却
+    class ApplicationLiteSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Application
+            fields = [
+                'id', 'status', 'updated_at', 'applicant', 'approver',
+                'approval_comment', 'comment', 'approved_at'
+            ]
 
     user = request.user
     raw_since = request.query_params.get('since')
@@ -69,7 +79,7 @@ def poll_kanban_updates(request):
               .filter(updated_at__gt=since_dt)
               .order_by('updated_at')[:50])  # 1 回で最大 50 件まで
         if qs:
-            data = ApplicationSerializer(qs, many=True).data
+            data = ApplicationLiteSerializer(qs, many=True).data
             serialized = data
             # 最新 updated_at を記録
             latest_seen = max(obj.updated_at for obj in qs)  # type: ignore[attr-defined]
@@ -81,5 +91,11 @@ def poll_kanban_updates(request):
 
     return Response({
         'applications': serialized,
-        'latest': latest_seen.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z')
+        'latest': latest_seen.astimezone(dt_timezone.utc).isoformat().replace('+00:00', 'Z'),
+        'backoff_hint': {
+            'min_ms': 200,
+            'max_ms': 2000,
+            'strategy': 'exponential-jitter',
+            'note': 'クライアントは連続空応答時にポーリング間隔を段階的に伸ばしてください'
+        }
     })
