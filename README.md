@@ -13,7 +13,7 @@
 - **管理者**: Django管理画面での全申請管理、監査ログ確認、証跡管理
 
 ### 特徴
-- **リアルタイム通知**: WebSocketによるリアルタイム通知システム
+- **リアルタイム通知**: Long Polling (差分取得API) によるシンプル・堅牢なリアルタイム更新
 - **カンバンボード**: 申請状況を視覚的に管理（承認待ち・承認済み・拒否）
 - **リアルタイム更新**: ページリロード不要のAjax通信とWebSocket連携
 - **監査ログ**: 全ての操作を記録し、証跡管理を実現
@@ -32,8 +32,7 @@
 - **python-decouple 3.8** - 設定管理ライブラリ
 
 ### リアルタイム通信・通知システム
-- **Django Channels 4.2.0** - WebSocket・非同期通信フレームワーク
-- **Daphne 4.1.2** - ASGI対応Webサーバー（WebSocket処理）
+- **Long Polling (差分取得API)** - WebSocket/Redis/RQ 不要の軽量リアルタイム更新
 
 ## 主要機能
 
@@ -57,19 +56,108 @@
 - **ユーザー管理**: 組織階層に基づくユーザー管理
 
 ### ユーザーエクスペリエンス
-- **リアルタイム通知**: WebSocketによる即座の通知更新
+- **リアルタイム通知**: 申請イベントをRQキューへ投入し、ワーカー経由でWebSocketへ配信 (UIスレッド負荷を低減)
 - **リアルタイム更新**: ページリロード不要のスムーズな操作
 - **プログレッシブ・エンハンスメント**: JavaScript無効環境でも基本機能利用可能
 
 ## セットアップ方法
 
 ### 必要な環境
-- **Python 3.8-3.13** (3.13推奨)
-- **[uv](https://docs.astral.sh/uv/)** (高速パッケージマネージャー、推奨) または pip
 
 ### Windows環境での前提条件
-- **Visual Studio Build Tools** または **Visual Studio Community** （Pillowライブラリのコンパイル用）
-- **Redis Server** （WebSocket・リアルタイム通知用、開発時はオプション）
+
+
+## WebSocket イベント仕様 (通知リファクタ後)
+
+カンバン更新は永続通知を介さず直接 WebSocket でイベントを受信します。
+
+イベント種別 (payload.type は常に `kanban_update`) はアクションを統一し、`action: application_state` のみを使用します。
+サーバ側で従来の個別イベント (new_application / application_approved / application_rejected) を現在のステータス情報へ正規化し `application_state` として配信します。
+
+共通ペイロード structure:
+```
+{
+   "type": "kanban_update",
+   "action": "<上記アクション>",
+   "application": {  // ApplicationSerializer 出力
+       "id": ..., "status": ..., ...
+   }
+}
+```
+
+補足:
+- クライアントは受信した `application.status` (pending / approved / rejected) と DOM 上の現在位置の差分でカード追加/移動とトースト表示を行います。
+- 重複抑止は (application.id, status) の短期キャッシュで行い冪等性を確保しています。
+- 永続通知 (Notification モデル) は削除済み。旧 API は利用不可。
+#### WSL (Ubuntu) 上での Redis セットアップ手順 (deprecated)
+Long Polling 移行に伴い本アプリは Redis / RQ / Channels を標準では使用しません。以下は旧リアルタイム push 実装の参考資料として残しています (再導入時の手順アーカイブ)。
+Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。
+   ```
+2. Ubuntu で Redis をインストール
+   ```bash
+   sudo apt update
+   sudo apt install -y redis-server
+   ```
+3. 設定を最小調整 (systemd 監視 & 永続化任意)
+   ```bash
+   sudo sed -i 's/^#* *supervised .*/supervised systemd/' /etc/redis/redis.conf
+   # (任意) AOF 永続化を有効化
+   sudo sed -i 's/^#* *appendonly .*/appendonly yes/' /etc/redis/redis.conf
+   ```
+   パスワードを付けたい場合は `/etc/redis/redis.conf` に行を追加:
+   ```
+   requirepass YourStrongPasswordHere
+   ```
+4. 起動/自動起動設定
+   ```bash
+   sudo systemctl enable --now redis-server
+   systemctl status redis-server --no-pager
+   ```
+5. 動作確認 (WSL 内)
+   ```bash
+   redis-cli ping   # → PONG
+   ```
+6. Windows から疎通確認 (PowerShell)
+   ```powershell
+   wsl -d Ubuntu redis-cli ping
+   ```
+   WSL2 で Redis が `127.0.0.1` にバインドされていれば Windows ホストからも `localhost:6379` でアクセス可能です。`/etc/redis/redis.conf` の `bind` をデフォルト (127.0.0.1) のままにし、`protected-mode yes` を維持してください。
+7. `.env` (または環境変数) 設定例
+   ```env
+   REDIS_URL=redis://localhost:6379/0
+   # パスワードを付与した場合
+   # REDIS_URL=redis://:YourStrongPasswordHere@localhost:6379/0
+   ```
+8. RQ ワーカー起動 (別 PowerShell ターミナル複数)
+   ```powershell
+   uv run python manage.py rqworker notifications
+   uv run python manage.py rqworker default
+   ```
+   通知専用キューだけ使う場合は `notifications` ワーカーだけでも可。負荷次第で `--worker-class` や 並列ターミナルを増やします。
+   
+   Windows で `AttributeError: module 'os' has no attribute 'fork'` が出る場合:
+   デフォルトワーカークラスは `os.fork()` を使うため Windows では失敗します。`SimpleWorker` を指定してフォーク無しで実行してください。
+   ```powershell
+   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker notifications
+   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker default
+   ```
+   あるいは WSL2(Ubuntu) 内で通常のワーカークラスを実行することも可能です。
+9. テスト: 申請作成/承認操作で通知が Redis 経由で配送されるかブラウザ (WebSocket) で確認。
+
+トラブルシュート:
+| 症状 | 確認コマンド | 対処 |
+|------|--------------|------|
+| 接続拒否 | `redis-cli ping` | サービス起動状態 `systemctl status redis-server` |
+| 認証失敗 | `(error) NOAUTH` | `requirepass` 設定と REDIS_URL のパスワード一致 |
+| 遅延/詰まり | `redis-cli info stats` | キュー長監視 `redis-cli llen rq:queue:notifications` |
+| メモリ不足 | `redis-cli info memory` | maxmemory 設定/不要キー削除 |
+
+Docker 代替 (WSL に Docker Desktop がある場合):
+```powershell
+docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
+```
+同様に `REDIS_URL=redis://localhost:6379/0` を使用します。
+
 
 ### 簡単セットアップ・起動（Windows PowerShell）
 
@@ -80,8 +168,8 @@
 # 開発サーバー起動（通常のDjangoサーバー）
 .\start-django.ps1
 
-# WebSocket対応ASGIサーバー起動（Daphne）
-.\start-daphne.ps1
+# (Archive) 旧 WebSocket対応ASGIサーバー起動（Daphne） Long Polling 現行構成では不要
+# .\start-daphne.ps1
 ```
 
 ### 手動セットアップ
@@ -105,8 +193,8 @@ uv run python manage.py collectstatic --noinput
 # サーバー起動
 uv run python manage.py runserver 8000
 
-# WebSocket対応ASGIサーバー起動（推奨）
-uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+# (Archive) 旧 WebSocket対応ASGIサーバー起動 (Long Polling では不要)
+# uv run python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
 ### LDAP認証環境のセットアップ
@@ -139,7 +227,8 @@ AUTHENTICATION_BACKENDS = [
 ```
 
 ```
-python -m daphne -p 8000 carry_out_approval.asgi:application
+# (Archive) 旧 Daphne 直接起動例 (Long Polling では不要)
+# python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
 ## Active Directory (Windows Server 2025) の LDAP 署名既定変更への対応
@@ -446,16 +535,16 @@ curl -H "Content-Type: application/json" \
    LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'
    ```
 
-#### WebSocket接続エラー
-1. **WebSocket接続失敗**
+#### (Archive) WebSocket接続エラー
+Long Polling 移行後は通常発生しません。旧実装検証時の参考として残しています。
+
+1. **WebSocket接続失敗** (旧手順)
    ```bash
-   # Daphneサーバーで起動（runserverではなく）
+   # legacy (不要)
    uv run python -m daphne -p 8000 carry_out_approval.asgi:application
    ```
-
-2. **Redis接続エラー**
-   - 開発環境では InMemoryChannelLayer を使用（Redis不要）
-   - 本番環境では Redis の起動を確認
+2. **Redis接続エラー** (旧 push 経路用)
+   - 現行構成では Redis 非使用
 
 #### データベース関連
 1. **マイグレーションエラー**
@@ -577,6 +666,47 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 - **Django統合**: 既存の認証システムとの自然な連携
 - **スケーラブル**: Redis によるチャンネルレイヤーでの水平拡張対応
 
+### Long Polling への段階的移行状況 (2025-08)
+
+本システムは当初 WebSocket + Redis (channels) + RQ による push 型更新でカンバン反映を行っていましたが、要件整理の結果「最終状態のみを最新化できれば UX を満たす」ことが判明したため、現在は Long Polling 方式へ段階的移行済みです。
+
+| 項目 | 状態 | 備考 |
+|------|------|------|
+| WebSocket カンバン更新 | 無効 (fallback クローズ) | `LONG_POLLING_ENABLED=True` 時 asgi で consumer 未登録 |
+| RQ 経由の送信タスク | no-op | `NotificationService` が early return |
+| Poll API (`/applications/poll/updates/?scope=kanban`) | 稼働 | 差分: `updated_at` > since の Application 一括返却 |
+| WebSocket consumer / routing | 残置 (後方互換) | 今後削除予定 (最終確認後) |
+| channels / channels_redis 依存 | まだ残置 | 削除候補 (別ブランチで除去予定) |
+| redis / django_rq | まだ残置 | 他用途が無ければ削除可能 |
+
+#### Long Polling 仕様概要
+- クライアントは前回レスポンスの `latest` (ISO8601 UTC) を次回 `since` として送信
+- サーバは対象ユーザ (applicant / approver) 関連 `Application.updated_at` > since が出現するまで最長 25 秒待機 (1 秒間隔ポーリング)
+- 変更検知時: 変更分 (最大 50 件) を即時返却。なければタイムアウトで空配列
+- クライアントは受信ごとに DOM 差分適用 (既存 WebSocket 処理を再利用)
+
+#### 今後の削除予定ファイル (削除手順メモ)
+| ファイル | 役割 | 削除条件 |
+|----------|------|----------|
+| `notifications/consumers.py` | WebSocket consumer | 全ページで Long Polling 安定運用確認後 |
+| `notifications/routing.py` | WebSocket ルーティング | consumer 削除と同時 |
+| `notifications/tasks.py` | RQ 送信タスク | 他で RQ 未使用を確認後 |
+| `notifications/services.py` 内 WS 関連分岐 | push 不要化 | consumer 削除前に整理 |
+| `carry_out_approval/asgi.py` の fallback | 完全削除段階 | WS 需要無しを正式決定後 |
+| 依存: `channels`, `channels_redis`, `django_rq`, `redis` | requirements / pyproject から除去 | 上記コード削除後 CI グリーン確認 |
+
+#### 移行後の利点
+- インフラ依存 (Redis, 専用 ASGI サーバ設定) 削減による運用負荷軽減
+- 接続維持コスト (WebSocket keepalive) 不要
+- デバッグ容易: 通常の HTTP トレースのみで解析可能
+
+#### 留意点 / 今後の最適化
+- 同時多数ユーザ時の DB ポーリング負荷: 現状 1 秒間隔。バックオフ (指数 / ジッタ) 導入余地
+- レスポンス payload サイズ最適化: 専用軽量シリアライザ導入 (必要フィールド限定) を検討
+- 変更トリガーを pub/sub で持つ (将来再び push が必要になった場合に備えイベント抽象化)
+
+> NOTE: 現在 WebSocket へ接続した場合は即時正常コード (1000) でクローズする fallback 実装。クライアント側で未使用であればユーザ影響なし。
+
 #### Bootstrap 5の採用理由
 - **レスポンシブ対応**: モバイルファーストデザイン
 - **豊富なコンポーネント**: 迅速なUI開発
@@ -667,26 +797,14 @@ uv pip install -r django\requirements.txt
 
 ### WebSocket・リアルタイム通知のエラー
 
-#### WebSocket接続エラー
+#### (Archive) WebSocket接続エラー
 ```
 WebSocket connection failed
 ```
-**対処法:**
-1. Daphne（ASGIサーバー）で起動していることを確認
-2. `.\start-daphne.ps1` または手動で `python -m daphne -p 8000 carry_out_approval.asgi:application`
-
-#### Redis接続エラー（本番環境）
-```
-Connection refused to Redis server
-```
-**対処法:**
-1. Redisサーバーが起動していることを確認
-2. 開発環境ではインメモリチャンネルレイヤーを使用（Redis不要）
-
-#### 通知が届かない
-1. ログイン状態を確認
-2. WebSocket接続テストページで動作確認: http://localhost:8000/websocket-test
-3. ブラウザの開発者ツールでWebSocket接続エラーを確認
+現行: WebSocket を使用しないため無視可。旧手順:
+1. (legacy) Daphne 起動確認
+2. (legacy) Redis 起動確認
+3. (legacy) /websocket-test ページで確認
 
 ## 今後の開発方針
 

@@ -11,6 +11,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // WebSocket接続を初期化
 function initializeWebSocket() {
+    if (window.USE_KANBAN_POLLING === true) {
+        console.log('[Kanban] WebSocket 初期化スキップ (ロングポーリングモード)');
+        return;
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/notifications/`;
     
@@ -38,42 +42,59 @@ function initializeWebSocket() {
 
 // WebSocketメッセージの処理
 function handleWebSocketMessage(data) {
-    if (data.type === 'notification') {
-        showToast(data.data.title, 'info');
-    } else if (data.type === 'kanban_update') {
+    if (data.type === 'kanban_update') {
+        // 重複イベント防止: 同一 (action, application.id) を直近1.5秒以内に処理済みならスキップ
+        if (!window.__kanbanEventCache) {
+            window.__kanbanEventCache = new Map();
+        }
+        try {
+            const key = data.action + ':' + (data.application && data.application.id);
+            const now = Date.now();
+            // 期限切れ掃除 (最大50件)
+            if (window.__kanbanEventCache.size > 80) {
+                for (const [k, v] of window.__kanbanEventCache.entries()) {
+                    if (now - v > 3000) window.__kanbanEventCache.delete(k);
+                }
+            }
+            const last = window.__kanbanEventCache.get(key);
+            if (last && (now - last) < 5000) {
+                console.debug('Duplicate kanban_update skipped', key);
+                return;
+            }
+            window.__kanbanEventCache.set(key, now);
+        } catch (e) {
+            console.warn('kanban_update dedupe error', e);
+        }
         handleKanbanUpdate(data);
     }
 }
 
 // カンバンボード更新の処理
 function handleKanbanUpdate(data) {
-    const { action, application } = data;
-    
-    switch (action) {
-        case 'new_application':
-            addApplicationCard(application, 'pending');
-            showToast(`新しい申請「${application.original_filename}」が追加されました`, 'info');
-            break;
-        case 'application_approved':
-            moveApplicationCard(application.id, 'approved');
-            // 申請者と承認者で異なるメッセージ
-            if (isApplicantView()) {
-                showApprovalNotification(application);
-            } else {
-                showToast(`申請「${application.original_filename}」が承認されました`, 'success');
-            }
-            break;
-        case 'application_rejected':
-            moveApplicationCard(application.id, 'rejected');
-            // 申請者と承認者で異なるメッセージ
-            if (isApplicantView()) {
-                showRejectionNotification(application);
-            } else {
-                showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
-            }
-            break;
+    // 統一後: action は常に application_state
+    const { application } = data;
+    if (!application) return;
+    const status = application.status; // pending / approved / rejected
+    const cardExistsInTarget = isCardInColumn(application.id, status);
+    const cardExistsAnywhere = document.querySelector(`.application-card[data-id="${application.id}"]`) !== null;
+
+    // 新規 (カードがどのカラムにも無く status=pending)
+    if (!cardExistsAnywhere && status === 'pending') {
+        addApplicationCard(application, 'pending');
+        showToast(`新しい申請「${application.original_filename}」が追加されました`, 'info');
+    } else if (status === 'approved' && !cardExistsInTarget) {
+        moveApplicationCard(application.id, 'approved');
+        showToast(`申請「${application.original_filename}」が承認されました`, 'success');
+    } else if (status === 'rejected' && !cardExistsInTarget) {
+        moveApplicationCard(application.id, 'rejected');
+        showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
+    } else if (status === 'pending' && !isCardInColumn(application.id, 'pending')) {
+        // 差し戻し (approved/rejected -> pending)
+        moveApplicationCard(application.id, 'pending');
+        showToast(`申請「${application.original_filename}」が差し戻されました`, 'info');
+    } else {
+        console.debug('application_state (no-op)', { id: application.id, status });
     }
-    
     updateColumnCounts();
 }
 
@@ -98,99 +119,7 @@ function isApplicantView() {
     return isApplicant;
 }
 
-// 申請承認時の特別な通知
-function showApprovalNotification(application) {
-    // 大きなモーダル通知
-    const modal = document.createElement('div');
-    modal.className = 'modal fade';
-    modal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-success">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title">
-                        <i class="bi bi-check-circle-fill me-2"></i>申請が承認されました！
-                    </h5>
-                </div>
-                <div class="modal-body text-center">
-                    <div class="mb-3">
-                        <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
-                    </div>
-                    <h5 class="text-success mb-3">おめでとうございます！</h5>
-                    <p class="mb-2">
-                        <strong>申請ファイル：</strong>${application.original_filename}
-                    </p>
-                    <p class="text-muted">
-                        承認者によって正式に承認されました。
-                    </p>
-                </div>
-                <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-success" data-bs-dismiss="modal">
-                        <i class="bi bi-check me-1"></i>確認
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    const bsModal = new bootstrap.Modal(modal);
-    bsModal.show();
-    
-    // モーダルが閉じられたら要素を削除
-    modal.addEventListener('hidden.bs.modal', () => {
-        modal.remove();
-    });
-    
-    // 通常のトーストも表示
-    showToast(`申請「${application.original_filename}」が承認されました！`, 'success');
-}
-
-// 申請却下時の特別な通知
-function showRejectionNotification(application) {
-    // 情報提供モーダル
-    const modal = document.createElement('div');
-    modal.className = 'modal fade';
-    modal.innerHTML = `
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-warning">
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title">
-                        <i class="bi bi-exclamation-triangle-fill me-2"></i>申請について
-                    </h5>
-                </div>
-                <div class="modal-body text-center">
-                    <div class="mb-3">
-                        <i class="bi bi-x-circle text-warning" style="font-size: 4rem;"></i>
-                    </div>
-                    <p class="mb-2">
-                        <strong>申請ファイル：</strong>${application.original_filename}
-                    </p>
-                    <p class="text-muted">
-                        承認者によって却下されました。<br>
-                        詳細については承認者にご確認ください。
-                    </p>
-                </div>
-                <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
-                        <i class="bi bi-check me-1"></i>確認
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    const bsModal = new bootstrap.Modal(modal);
-    bsModal.show();
-    
-    // モーダルが閉じられたら要素を削除
-    modal.addEventListener('hidden.bs.modal', () => {
-        modal.remove();
-    });
-    
-    // 通常のトーストも表示
-    showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
-}
+// 承認/却下時のモーダルは廃止しトーストのみ使用
 
 // 申請カードを追加
 function addApplicationCard(application, status) {
@@ -219,6 +148,8 @@ function addApplicationCard(application, status) {
                 cardElement.style.transition = 'all 0.3s ease';
                 cardElement.style.opacity = '1';
                 cardElement.style.transform = 'translateY(0)';
+                // 追加完了後にカウント更新
+                updateColumnCounts();
             }, 100);
         })
         .catch(error => {
@@ -244,7 +175,18 @@ function moveApplicationCard(applicationId, newStatus) {
         
         // ステータスの更新
         currentCard.dataset.status = newStatus;
+    // 移動後にカウントを更新
+    updateColumnCounts();
+    // 念のため遅延再計算 (アニメ/再描画後)
+    setTimeout(updateColumnCounts, 200);
     }, 150);
+}
+
+// 指定IDのカードが特定ステータスカラム内に存在するか
+function isCardInColumn(applicationId, status) {
+    const column = document.getElementById(`${status}-column`);
+    if (!column) return false;
+    return !!column.querySelector(`.application-card[data-id="${applicationId}"]`);
 }
 
 // Sortable.jsでドラッグ&ドロップを初期化
@@ -391,17 +333,28 @@ function showNewApplicationModal() {
 
 // カラムのカード数を更新
 function updateColumnCounts() {
-    const columns = ['pending', 'approved', 'rejected'];
-    
-    columns.forEach(status => {
+    const statuses = ['pending', 'approved', 'rejected'];
+    statuses.forEach(status => {
         const column = document.getElementById(`${status}-column`);
+        if (!column) return;
         const cards = column.querySelectorAll('.application-card');
-        const header = column.parentElement.querySelector('.kanban-header h5');
-        
-        // ヘッダーのテキストを更新
-        const iconClass = header.querySelector('i').className;
-        const baseText = header.textContent.replace(/\(\d+\)/, '');
-        header.innerHTML = `<i class="${iconClass}"></i> ${baseText.trim()} (${cards.length})`;
+        let headerWrapper = column.previousElementSibling;
+        if (!(headerWrapper && headerWrapper.classList.contains('kanban-header'))) {
+            headerWrapper = column.parentElement.querySelector('.kanban-header');
+        }
+        if (!headerWrapper) return;
+        const header = headerWrapper.querySelector('h5');
+        if (!header) return;
+        const iconElem = header.querySelector('i');
+        const iconClass = iconElem ? iconElem.className : 'bi bi-kanban';
+        const raw = header.textContent || '';
+        // 全角（ ）と半角() の両方を削除
+        const base = raw
+            .replace(/（\d+）/g, '')
+            .replace(/\(\d+\)/g, '')
+            .trim();
+        header.innerHTML = `<i class="${iconClass}"></i> ${base} (${cards.length})`;
+        console.debug('updateColumnCounts:', { status, count: cards.length, base, raw });
     });
 }
 
@@ -468,10 +421,34 @@ function getOrCreateToastContainer() {
     return container;
 }
 
+// ===== 後方互換スタブ =====
+// 旧コードで利用されていた showApprovalNotification / showRejectionNotification
+// がテンプレートやキャッシュに残っていてもエラーにならないようトースト呼び出しへ委譲
+if (typeof window.showApprovalNotification === 'undefined') {
+    window.showApprovalNotification = function(application) {
+        if (!application) return;
+        showToast(`申請「${application.original_filename || ''}」が承認されました`, 'success');
+    };
+}
+if (typeof window.showRejectionNotification === 'undefined') {
+    window.showRejectionNotification = function(application) {
+        if (!application) return;
+        showToast(`申請「${application.original_filename || ''}」が却下されました`, 'warning');
+    };
+}
+if (typeof window.showNewApplicationNotification === 'undefined') {
+    window.showNewApplicationNotification = function(application) {
+        if (!application) return;
+        showToast(`新しい申請「${application.original_filename || ''}」が追加されました`, 'info');
+    };
+}
+
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
     // カード数の初期更新
     updateColumnCounts();
+    // 初期化後に再度 count を安定化 (遅延挿入カードがある場合)
+    setTimeout(updateColumnCounts, 300);
     
     // 定期的に更新をチェック（オプション）
     // setInterval(checkForUpdates, 30000); // 30秒ごと
@@ -494,3 +471,59 @@ document.addEventListener('keydown', function(e) {
         });
     }
 });
+
+// ===== ロングポーリング (段階的移行) =====
+(function(){
+    let pollingActive = false;
+    let since = null; // ISO8601 (Z)
+    let stopped = false;
+
+    let backoffMs = 50;
+    function loop(){
+        if (!pollingActive || stopped) return;
+        const url = new URL('/applications/poll/updates/', window.location.origin);
+        url.searchParams.set('scope', 'kanban');
+        if (since) url.searchParams.set('since', since);
+        fetch(url.toString(), { credentials: 'include' })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(data => {
+                if (data && Array.isArray(data.applications)) {
+                    if (data.applications.length > 0) {
+                        data.applications.forEach(app => handleKanbanUpdate({ application: app }));
+                        backoffMs = 50; // 成功して差分ありなら即再ポーリング
+                    } else {
+                        backoffMs = Math.min(backoffMs * 1.5, 1500); // 空応答で指数的に延長
+                    }
+                }
+                if (data && data.latest) since = data.latest;
+                if (data && data.backoff_hint) {
+                    backoffMs = Math.max(backoffMs, data.backoff_hint.min_ms || 50);
+                    backoffMs = Math.min(backoffMs, data.backoff_hint.max_ms || 1500);
+                }
+            })
+            .catch(err => { console.error('[Kanban] poll error', err); backoffMs = Math.min(backoffMs * 2, 3000); })
+            .finally(() => setTimeout(loop, backoffMs));
+    }
+
+    function startKanbanPolling(){
+        if (pollingActive) return;
+        pollingActive = true;
+        console.log('[Kanban] Long polling 開始');
+        if (websocket) { try { websocket.close(); } catch(e) {} websocket = null; }
+        loop();
+    }
+
+    function stopKanbanPolling(){
+        pollingActive = false;
+        console.log('[Kanban] Long polling 停止要求');
+    }
+
+    window.startKanbanPolling = startKanbanPolling;
+    window.stopKanbanPolling = stopKanbanPolling;
+
+    if (window.USE_KANBAN_POLLING === true) {
+        startKanbanPolling();
+    }
+
+    window.addEventListener('beforeunload', () => { stopped = true; pollingActive = false; });
+})();

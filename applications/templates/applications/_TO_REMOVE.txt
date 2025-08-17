@@ -1,0 +1,1 @@
+application_card.html / application_card_backup.html を削除しました。不要フォールバック。

@@ -44,6 +44,12 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     position: relative;
     overflow: hidden;
+    /* カードサイズを小さく設定 */
+    max-height: 140px;
+}
+
+.application-card.expanded {
+    max-height: none;
 }
 
 .application-card::before {
@@ -86,24 +92,69 @@
 
 /* カードボディ */
 .application-card .card-body {
-    padding: 1rem;
+    padding: 0.75rem;
 }
 
 .application-card .card-title {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
     color: #343a40;
 }
 
 .application-card .card-text {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     line-height: 1.4;
     margin-bottom: 0.5rem;
 }
 
 .application-card .card-text:last-child {
     margin-bottom: 0;
+}
+
+/* Expandable Content */
+.expandable-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.application-card.expanded .expandable-content {
+    max-height: 300px;
+}
+
+/* Card Footer */
+.card-footer {
+    padding: 0.5rem 0.75rem;
+    background-color: #f8f9fa;
+    border-top: 1px solid #dee2e6;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.card-footer:hover {
+    background-color: #e9ecef;
+}
+
+.card-footer .expand-icon {
+    transition: transform 0.3s ease;
+}
+
+.application-card.expanded .card-footer .expand-icon {
+    transform: rotate(180deg);
+}
+
+.expand-link {
+    text-decoration: none;
+    color: #6c757d;
+    display: inline-block;
+    padding: 0.25rem;
+}
+
+.expand-link:hover {
+    color: #495057;
+    text-decoration: none;
 }
 
 /* ファイルアイコン */

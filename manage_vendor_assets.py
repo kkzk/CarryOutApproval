@@ -34,19 +34,12 @@ BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / 'vendor_assets.json'
 
 @dataclass
-class FileEntry:
-    src: str
-    dest: str
-
-@dataclass
 class LibrarySpec:
     name: str
     version: str
     type: str  # 'zip' or 'single'
     url: str
     zip_root: str | None = None
-    files: List[FileEntry] | None = None
-    extra_dirs: List[str] | None = None
     single_file_name: str | None = None
 
 @dataclass
@@ -62,15 +55,12 @@ def load_config() -> Config:
     data = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
     libs: List[LibrarySpec] = []
     for raw in data.get('libraries', []):
-        files = [FileEntry(**f) for f in raw.get('files', [])]
         libs.append(LibrarySpec(
             name=raw['name'],
             version=raw['version'],
             type=raw['type'],
             url=raw['url'],
             zip_root=raw.get('zip_root'),
-            files=files if files else None,
-            extra_dirs=raw.get('extra_dirs'),
             single_file_name=raw.get('single_file_name')
         ))
     return Config(
@@ -140,29 +130,16 @@ def ensure_library(spec: LibrarySpec, cfg: Config, force: bool, extract_only: bo
         with tempfile.TemporaryDirectory() as td:
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(td)
-            root = Path(td)
+            
+            source_dir = Path(td)
             if spec.zip_root:
-                candidate = root / spec.zip_root
+                candidate = source_dir / spec.zip_root
                 if candidate.exists():
-                    root = candidate
-            # ファイルコピー
-            if spec.files:
-                for fe in spec.files:
-                    src_path = root / fe.src
-                    if not src_path.exists():
-                        print(f"[WARN] missing {fe.src} for {spec.name}")
-                        continue
-                    dest_path = out_dir / fe.dest
-                    dest_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_path, dest_path)
-            # extra dirs
-            if spec.extra_dirs:
-                for d in spec.extra_dirs:
-                    src_dir = root / d
-                    if src_dir.exists():
-                        shutil.copytree(src_dir, out_dir / d, dirs_exist_ok=True)
-                    else:
-                        print(f"[WARN] missing dir {d} for {spec.name}")
+                    source_dir = candidate
+
+            # すべてのコンテンツをコピー
+            shutil.copytree(source_dir, out_dir, dirs_exist_ok=True)
+            print(f"[EXTRACT] All files from {spec.name} to {out_dir}")
     else:
         raise ValueError(f"Unknown type: {spec.type}")
 

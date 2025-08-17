@@ -1,7 +1,5 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 import os
 import uuid
 from datetime import datetime
@@ -89,30 +87,6 @@ class Application(models.Model):
         return f"{self.applicant}の申請 ({self.id})"
 
 
-# シグナル: 申請作成時と ステータス変更時の処理
-@receiver(post_save, sender=Application)
-def handle_application_changes(sender, instance, created, **kwargs):
-    """申請の作成・変更時の処理"""
-    from django.conf import settings
-    notifications_on = getattr(settings, 'NOTIFICATIONS_ENABLED', True)
-    if created:
-        if notifications_on:
-            from notifications.services import NotificationService
-            NotificationService.notify_new_application(instance)
-    elif not created:
-        # ステータス変更時の処理
-        if instance.status == ApprovalStatus.APPROVED and not instance.approved_at:
-            # 承認時の処理
-            instance.approved_at = datetime.now()
-            instance.save(update_fields=['approved_at'])
-            
-            # 承認済みディレクトリへの移動処理
-            # move_file_to_approved_directory(instance)
-            
-            if notifications_on:
-                from notifications.services import NotificationService
-                NotificationService.notify_application_approved(instance)
-            
-        elif instance.status == ApprovalStatus.REJECTED and notifications_on:
-            from notifications.services import NotificationService
-            NotificationService.notify_application_rejected(instance)
+"""以前は post_save シグナルで通知処理を行っていたが、
+明示的な View/API 層での呼び出しに移行したため削除。
+モデルは純粋なデータ構造のみを保持し副作用を避ける。"""
