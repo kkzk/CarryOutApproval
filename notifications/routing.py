@@ -1,10 +1,6 @@
-from django.urls import re_path
-from . import consumers
+"""[deprecated] WebSocket ルーティング (Long Polling 移行で無効)
 
-# WebSocketエンドポイント
-# 正式: /ws/notifications/
-# 便宜上、よくあるタイプミス /ws/notification/ も受け付ける
-websocket_urlpatterns = [
-    re_path(r"^ws/notifications/$", consumers.NotificationConsumer.as_asgi()),
-    re_path(r"^ws/notification/$", consumers.NotificationConsumer.as_asgi()),  # エイリアス
-]
+保持理由: 完全削除前の参照漏れ検証用。`asgi.py` では既に利用していない。
+"""
+
+websocket_urlpatterns: list = []  # type: ignore
