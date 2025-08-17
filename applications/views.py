@@ -7,14 +7,15 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db import transaction
+from django.db import transaction  # left for potential future batch ops (state_machine handles its own)
 from django.db import models
 from django.template.loader import render_to_string
-from django.utils import timezone
+from django.utils import timezone  # may be used elsewhere; retained
 from .models import Application, ApprovalStatus
 from .serializers import ApplicationSerializer, ApplicationCreateSerializer, ApplicationStatusUpdateSerializer
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
+from . import state_machine
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
@@ -53,8 +54,9 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             action="create",
             details=f"申請を作成しました。ファイル: {application.original_filename}"
         )
-    # 通知 (シグナル廃止に伴い直接呼び出し)
-    from notifications.services import NotificationService
+        # 初期状態を双方へ通知 (pending)
+        from notifications.services import NotificationService
+        NotificationService.broadcast_application_state(application)
     
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):
@@ -66,35 +68,18 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(application, data=request.data, partial=True)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        with transaction.atomic():
-            old_status = application.status
-            serializer.save()
-            # 通知 (シグナル廃止に伴いここで送信)
-            from notifications.services import NotificationService
-            # 承認日時設定（以前はシグナルで実施）
-            if application.status == ApprovalStatus.APPROVED and application.approved_at is None:
-                application.approved_at = timezone.now()
-                application.save(update_fields=['approved_at'])
-            if application.status == ApprovalStatus.APPROVED:
-                NotificationService.notify_application_approved(application)
-            elif application.status == ApprovalStatus.REJECTED:
-                NotificationService.notify_application_rejected(application)
-            if application.status == ApprovalStatus.APPROVED:
-                action = "approve"
-                details = f"申請を承認しました。コメント: {application.approval_comment or 'なし'}"
-            elif application.status == ApprovalStatus.REJECTED:
-                action = "reject"
-                details = f"申請を拒否しました。コメント: {application.approval_comment or 'なし'}"
-            else:
-                action = "update_status"
-                details = f"ステータスを {old_status} から {application.status} に変更しました。"
-            AuditLog.objects.create(
-                user=request.user,
-                application=application,
-                action=action,
-                details=details
+        new_status = serializer.validated_data.get('status', application.status)
+        try:
+            state_machine.change_status(
+                application,
+                new_status,
+                request.user,
+                comment=serializer.validated_data.get('approval_comment')
             )
-        return Response(serializer.data)
+        except state_machine.InvalidTransition as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        refreshed = Application.objects.get(pk=application.pk)
+        return Response(ApplicationSerializer(refreshed).data)
 
 
 class MyApplicationListView(generics.ListAPIView):
@@ -128,57 +113,25 @@ def update_application_status(request):
         application_id = request.POST.get('application_id')
         new_status = request.POST.get('status')
         comment = request.POST.get('comment', '')
-        
+
         application = get_object_or_404(Application, id=application_id)
-        # 権限チェック
         if application.approver != request.user.username and not request.user.is_staff:
             return JsonResponse({'error': '権限がありません'}, status=403)
-        
-        old_status = application.status
-        application.status = new_status
-        
-        if comment:
-            application.approval_comment = comment
-    # approved_at は post_save シグナルで設定（ここで設定すると通知が送信されないため）
-        
-        application.save()
-        
-        # 通知 (シグナル廃止に伴いここで送信)
-        from notifications.services import NotificationService
-        if application.status == ApprovalStatus.APPROVED and application.approved_at is None:
-            application.approved_at = timezone.now()
-            application.save(update_fields=['approved_at'])
-        if application.status == ApprovalStatus.APPROVED:
-            NotificationService.notify_application_approved(application)
-        elif application.status == ApprovalStatus.REJECTED:
-            NotificationService.notify_application_rejected(application)
-        
-        # 監査ログを記録
-        AuditLog.objects.create(
-            user=request.user,
-            application=application,
-            action=f"status_change_{new_status}",
-            details=f"ステータスを {old_status} から {new_status} に変更。コメント: {comment or 'なし'}"
-        )
-        
-        # 更新されたカードのHTMLを返す
-        # ユーザーの役割に応じて適切なカードテンプレートを選択
+
+        try:
+            state_machine.change_status(application, new_status, request.user, comment=comment)
+        except state_machine.InvalidTransition as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
         if application.applicant == request.user.username:
-            # 申請者の場合
             template_name = 'applications/applicant_application_card.html'
         elif application.approver == request.user.username or request.user.is_staff:
-            # 承認者の場合
             template_name = 'applications/approver_application_card.html'
         else:
-            # 想定外パス: デフォルトは申請者カードを使用（application_card.html は廃止）
             template_name = 'applications/applicant_application_card.html'
-            
-        card_html = render_to_string(template_name, {
-            'application': application
-        }, request=request)
-        
+
+        card_html = render_to_string(template_name, {'application': application}, request=request)
         return HttpResponse(card_html)
-        
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

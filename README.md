@@ -72,11 +72,8 @@
 
 カンバン更新は永続通知を介さず直接 WebSocket でイベントを受信します。
 
-イベント種別 (payload.type は常に `kanban_update`):
-- action: `new_application` 申請作成時 (承認者宛)
-- action: `application_approved` 承認完了 (申請者宛)
-- action: `application_rejected` 却下 (申請者宛)
-- action: `application_state` サーバからの手動再同期 / 双方宛ブロードキャスト
+イベント種別 (payload.type は常に `kanban_update`) はアクションを統一し、`action: application_state` のみを使用します。
+サーバ側で従来の個別イベント (new_application / application_approved / application_rejected) を現在のステータス情報へ正規化し `application_state` として配信します。
 
 共通ペイロード structure:
 ```
@@ -90,8 +87,8 @@
 ```
 
 補足:
-- 冪等性はクライアント側 (kanban.js) の簡易キャッシュで重複抑止。
-- 今後 `application_state` に統一する移行を行う場合は JS の switch 文を一本化し、サーバ側で全イベントを `application_state` へマップ予定。
+- クライアントは受信した `application.status` (pending / approved / rejected) と DOM 上の現在位置の差分でカード追加/移動とトースト表示を行います。
+- 重複抑止は (application.id, status) の短期キャッシュで行い冪等性を確保しています。
 - 永続通知 (Notification モデル) は削除済み。旧 API は利用不可。
 #### WSL (Ubuntu) 上での Redis セットアップ手順
 Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。

@@ -67,43 +67,30 @@ function handleWebSocketMessage(data) {
 
 // カンバンボード更新の処理
 function handleKanbanUpdate(data) {
-    const { action, application } = data;
-    
-    switch (action) {
-        case 'new_application':
-            addApplicationCard(application, 'pending');
-            showToast(`新しい申請「${application.original_filename}」が追加されました`, 'info');
-            break;
-        case 'application_approved':
-            // 既に approved カラムにあれば再処理しない
-            if (!isCardInColumn(application.id, 'approved')) {
-                moveApplicationCard(application.id, 'approved');
-            } else {
-                console.debug('Skip duplicate move (approved)', application.id);
-            }
-            // 申請者と承認者で異なるメッセージ
-            if (isApplicantView()) {
-                // モーダルはブロッキングなのでトーストのみ
-                showToast(`申請「${application.original_filename}」が承認されました`, 'success');
-            } else {
-                showToast(`申請「${application.original_filename}」が承認されました`, 'success');
-            }
-            break;
-        case 'application_rejected':
-            if (!isCardInColumn(application.id, 'rejected')) {
-                moveApplicationCard(application.id, 'rejected');
-            } else {
-                console.debug('Skip duplicate move (rejected)', application.id);
-            }
-            // 申請者と承認者で異なるメッセージ
-            if (isApplicantView()) {
-                showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
-            } else {
-                showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
-            }
-            break;
+    // 統一後: action は常に application_state
+    const { application } = data;
+    if (!application) return;
+    const status = application.status; // pending / approved / rejected
+    const cardExistsInTarget = isCardInColumn(application.id, status);
+    const cardExistsAnywhere = document.querySelector(`.application-card[data-id="${application.id}"]`) !== null;
+
+    // 新規 (カードがどのカラムにも無く status=pending)
+    if (!cardExistsAnywhere && status === 'pending') {
+        addApplicationCard(application, 'pending');
+        showToast(`新しい申請「${application.original_filename}」が追加されました`, 'info');
+    } else if (status === 'approved' && !cardExistsInTarget) {
+        moveApplicationCard(application.id, 'approved');
+        showToast(`申請「${application.original_filename}」が承認されました`, 'success');
+    } else if (status === 'rejected' && !cardExistsInTarget) {
+        moveApplicationCard(application.id, 'rejected');
+        showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
+    } else if (status === 'pending' && !isCardInColumn(application.id, 'pending')) {
+        // 差し戻し (approved/rejected -> pending)
+        moveApplicationCard(application.id, 'pending');
+        showToast(`申請「${application.original_filename}」が差し戻されました`, 'info');
+    } else {
+        console.debug('application_state (no-op)', { id: application.id, status });
     }
-    
     updateColumnCounts();
 }
 

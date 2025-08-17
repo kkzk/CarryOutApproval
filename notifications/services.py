@@ -67,31 +67,28 @@ class NotificationService:
     
     @staticmethod
     def notify_new_application(application):
-        """新規申請の通知"""
-    # 過剰なRedis重複抑止を撤廃
+        """新規申請の通知 (統一: action は常に application_state)"""
         NotificationService.send_kanban_update_notification(
             user=application.approver,
-            action='new_application',
+            action='application_state',  # 旧: new_application
             application=application
         )
     
     @staticmethod
     def notify_application_approved(application):
-        """申請承認の通知"""
-    # 永続通知は生成せず Kanban 更新のみ送信 (冪等化のRedisガードを撤廃)
+        """申請承認の通知 (統一: action は常に application_state)"""
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
-            action='application_approved',
+            action='application_state',  # 旧: application_approved
             application=application
         )
     
     @staticmethod
     def notify_application_rejected(application):
-        """申請却下の通知"""
-        # 永続通知は生成せず Kanban 更新のみ送信 (冪等化のRedisガード撤廃)
+        """申請却下の通知 (統一: action は常に application_state)"""
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
-            action='application_rejected',
+            action='application_state',  # 旧: application_rejected
             application=application
         )
 
@@ -100,11 +97,11 @@ class NotificationService:
         """申請の現在状態を申請者・承認者双方にブロードキャスト"""
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
-            action='application_state',
+            action='application_state',  # 統一
             application=application
         )
         NotificationService.send_kanban_update_notification(
             user=application.approver,
-            action='application_state',
+            action='application_state',  # 統一
             application=application
         )

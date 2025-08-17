@@ -183,41 +183,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 申請者向けのカスタムメッセージハンドラー
+    // 統一後 action=application_state を前提にステータス遷移のみ追加でブラウザ通知
     const originalHandleKanbanUpdate = window.handleKanbanUpdate;
     window.handleKanbanUpdate = function(data) {
-        const { action, application } = data;
-        
-        switch (action) {
-            case 'application_approved':
-                moveApplicationCard(application.id, 'approved');
-                showApprovalNotification(application);
-                // ブラウザ通知も送信
-                sendBrowserNotification(
-                    '申請が承認されました！',
-                    `申請「${application.original_filename}」が承認されました。`,
-                    'success'
-                );
-                break;
-            case 'application_rejected':
-                moveApplicationCard(application.id, 'rejected');
-                showRejectionNotification(application);
-                // ブラウザ通知も送信
-                sendBrowserNotification(
-                    '申請について',
-                    `申請「${application.original_filename}」が却下されました。`,
-                    'warning'
-                );
-                break;
-            default:
-                // 元の処理を呼び出し
-                if (originalHandleKanbanUpdate) {
-                    originalHandleKanbanUpdate(data);
-                }
-                break;
+        const beforeApproved = isCardInColumn(data.application.id, 'approved');
+        const beforeRejected = isCardInColumn(data.application.id, 'rejected');
+        if (originalHandleKanbanUpdate) originalHandleKanbanUpdate(data);
+        const status = data.application.status;
+        if (status === 'approved' && !beforeApproved) {
+            showApprovalNotification(data.application);
+            sendBrowserNotification(
+                '申請が承認されました！',
+                `申請「${data.application.original_filename}」が承認されました。`,
+                'success'
+            );
+        } else if (status === 'rejected' && !beforeRejected) {
+            showRejectionNotification(data.application);
+            sendBrowserNotification(
+                '申請について',
+                `申請「${data.application.original_filename}」が却下されました。`,
+                'warning'
+            );
         }
-        
         updateColumnCounts();
-    };
+    }
     
     // ブラウザ通知を送信
     window.sendBrowserNotification = function(title, message, type) {
