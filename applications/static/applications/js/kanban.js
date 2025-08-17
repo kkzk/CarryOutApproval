@@ -467,3 +467,48 @@ document.addEventListener('keydown', function(e) {
         });
     }
 });
+
+// ===== ロングポーリング (段階的移行) =====
+(function(){
+    let pollingActive = false;
+    let since = null; // ISO8601 (Z)
+    let stopped = false;
+
+    function loop(){
+        if (!pollingActive || stopped) return;
+        const url = new URL('/notifications/poll/kanban/', window.location.origin);
+        if (since) url.searchParams.set('since', since);
+        fetch(url.toString(), { credentials: 'include' })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(data => {
+                if (data && Array.isArray(data.applications)) {
+                    data.applications.forEach(app => handleKanbanUpdate({ application: app }));
+                }
+                if (data && data.latest) since = data.latest;
+            })
+            .catch(err => console.error('[Kanban] poll error', err))
+            .finally(() => setTimeout(loop, 50));
+    }
+
+    function startKanbanPolling(){
+        if (pollingActive) return;
+        pollingActive = true;
+        console.log('[Kanban] Long polling 開始');
+        if (websocket) { try { websocket.close(); } catch(e) {} websocket = null; }
+        loop();
+    }
+
+    function stopKanbanPolling(){
+        pollingActive = false;
+        console.log('[Kanban] Long polling 停止要求');
+    }
+
+    window.startKanbanPolling = startKanbanPolling;
+    window.stopKanbanPolling = stopKanbanPolling;
+
+    if (window.USE_KANBAN_POLLING === true) {
+        startKanbanPolling();
+    }
+
+    window.addEventListener('beforeunload', () => { stopped = true; pollingActive = false; });
+})();
