@@ -169,8 +169,8 @@ docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
 # 開発サーバー起動（通常のDjangoサーバー）
 .\start-django.ps1
 
-# WebSocket対応ASGIサーバー起動（Daphne）
-.\start-daphne.ps1
+# (Archive) 旧 WebSocket対応ASGIサーバー起動（Daphne） Long Polling 現行構成では不要
+# .\start-daphne.ps1
 ```
 
 ### 手動セットアップ
@@ -194,8 +194,8 @@ uv run python manage.py collectstatic --noinput
 # サーバー起動
 uv run python manage.py runserver 8000
 
-# WebSocket対応ASGIサーバー起動（推奨）
-uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+# (Archive) 旧 WebSocket対応ASGIサーバー起動 (Long Polling では不要)
+# uv run python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
 ### LDAP認証環境のセットアップ
@@ -228,7 +228,8 @@ AUTHENTICATION_BACKENDS = [
 ```
 
 ```
-python -m daphne -p 8000 carry_out_approval.asgi:application
+# (Archive) 旧 Daphne 直接起動例 (Long Polling では不要)
+# python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
 ## Active Directory (Windows Server 2025) の LDAP 署名既定変更への対応
@@ -535,16 +536,16 @@ curl -H "Content-Type: application/json" \
    LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'
    ```
 
-#### WebSocket接続エラー
-1. **WebSocket接続失敗**
+#### (Archive) WebSocket接続エラー
+Long Polling 移行後は通常発生しません。旧実装検証時の参考として残しています。
+
+1. **WebSocket接続失敗** (旧手順)
    ```bash
-   # Daphneサーバーで起動（runserverではなく）
+   # legacy (不要)
    uv run python -m daphne -p 8000 carry_out_approval.asgi:application
    ```
-
-2. **Redis接続エラー**
-   - 開発環境では InMemoryChannelLayer を使用（Redis不要）
-   - 本番環境では Redis の起動を確認
+2. **Redis接続エラー** (旧 push 経路用)
+   - 現行構成では Redis 非使用
 
 #### データベース関連
 1. **マイグレーションエラー**
@@ -797,26 +798,14 @@ uv pip install -r django\requirements.txt
 
 ### WebSocket・リアルタイム通知のエラー
 
-#### WebSocket接続エラー
+#### (Archive) WebSocket接続エラー
 ```
 WebSocket connection failed
 ```
-**対処法:**
-1. Daphne（ASGIサーバー）で起動していることを確認
-2. `.\start-daphne.ps1` または手動で `python -m daphne -p 8000 carry_out_approval.asgi:application`
-
-#### Redis接続エラー（本番環境）
-```
-Connection refused to Redis server
-```
-**対処法:**
-1. Redisサーバーが起動していることを確認
-2. 開発環境ではインメモリチャンネルレイヤーを使用（Redis不要）
-
-#### 通知が届かない
-1. ログイン状態を確認
-2. WebSocket接続テストページで動作確認: http://localhost:8000/websocket-test
-3. ブラウザの開発者ツールでWebSocket接続エラーを確認
+現行: WebSocket を使用しないため無視可。旧手順:
+1. (legacy) Daphne 起動確認
+2. (legacy) Redis 起動確認
+3. (legacy) /websocket-test ページで確認
 
 ## 今後の開発方針
 
