@@ -9,10 +9,9 @@
     
     <!-- Local vendored CSS -->
     <link href="{% static 'vendor/bootstrap/5.3.3/css/bootstrap.min.css' %}" rel="stylesheet">
-    <link href="{% static 'vendor/bootstrap-icons/1.11.3/bootstrap-icons.css' %}" rel="stylesheet">
+    <link href="{% static 'vendor/bootstrap-icons/1.11.3/font/bootstrap-icons.css' %}" rel="stylesheet">
     <link href="{% static 'vendor/fontawesome/6.5.2/css/all.min.css' %}" rel="stylesheet">
-    <!-- Remove TTF fallback to avoid 404 in offline package -->
-    <link href="{% static 'vendor/fontawesome/6.5.2/css/fa-local-overrides.css' %}" rel="stylesheet">
+    {# FontAwesome local overrides disabled in development #}
     
     <!-- Custom CSS -->
     {% block extra_css %}{% endblock %}

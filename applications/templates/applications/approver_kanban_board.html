@@ -6,6 +6,37 @@
 
 {% block extra_css %}
 <link href="{% static 'applications/css/kanban.css' %}" rel="stylesheet">
+<style>
+    .application-card {
+        transition: max-height 0.5s ease-in-out;
+        max-height: 180px; /* 初期状態のカードの高さ */
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+    .application-card.expanded {
+        max-height: 500px; /* 展開後のカードの高さ */
+    }
+    .application-card .card-content {
+        flex-grow: 1;
+        overflow: hidden;
+    }
+    .application-card .expandable-content {
+        display: none;
+    }
+    .application-card.expanded .expandable-content {
+        display: block;
+    }
+    .application-card .card-footer {
+        flex-shrink: 0;
+        cursor: pointer;
+        background-color: #f8f9fa;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -129,6 +160,20 @@
 <script src="{% static 'vendor/sortablejs/1.15.6/Sortable.min.js' %}"></script>
 <script src="{% static 'applications/js/kanban.js' %}"></script>
 <script>
+function toggleCard(element, event) {
+    event.stopPropagation();
+    event.preventDefault();
+    const card = element.closest('.application-card');
+    card.classList.toggle('expanded');
+    const icon = element.querySelector('.expand-icon');
+    if (card.classList.contains('expanded')) {
+        icon.classList.remove('bi-chevron-down');
+        icon.classList.add('bi-chevron-up');
+    } else {
+        icon.classList.remove('bi-chevron-up');
+        icon.classList.add('bi-chevron-down');
+    }
+}
 document.addEventListener('DOMContentLoaded', function() {
     if (window.websocket && window.bindWsStatus) {
         bindWsStatus(window.websocket);
