@@ -144,7 +144,18 @@ def update_application_status(request):
         )
         
         # 更新されたカードのHTMLを返す
-        card_html = render_to_string('applications/application_card.html', {
+        # ユーザーの役割に応じて適切なカードテンプレートを選択
+        if application.applicant == request.user.username:
+            # 申請者の場合
+            template_name = 'applications/applicant_application_card.html'
+        elif application.approver == request.user.username or request.user.is_staff:
+            # 承認者の場合
+            template_name = 'applications/approver_application_card.html'
+        else:
+            # その他の場合（念のため）
+            template_name = 'applications/application_card.html'
+            
+        card_html = render_to_string(template_name, {
             'application': application
         }, request=request)
         
@@ -177,7 +188,18 @@ def application_card(request, pk):
         return JsonResponse({'error': 'アクセス権限がありません'}, status=403)
     
     # カードHTMLを返す
-    card_html = render_to_string('applications/application_card.html', {
+    # ユーザーの役割に応じて適切なカードテンプレートを選択
+    if application.applicant == request.user.username:
+        # 申請者の場合
+        template_name = 'applications/applicant_application_card.html'
+    elif application.approver == request.user.username or request.user.is_staff:
+        # 承認者の場合
+        template_name = 'applications/approver_application_card.html'
+    else:
+        # その他の場合（念のため）
+        template_name = 'applications/application_card.html'
+        
+    card_html = render_to_string(template_name, {
         'application': application
     }, request=request)
     
