@@ -13,7 +13,13 @@ from django.utils import timezone
 from django.db import transaction
 from .models import Application, ApprovalStatus
 from audit.models import AuditLog
-from .realtime import broadcast_application_state
+def broadcast_application_state(_application):  # pragma: no cover
+    """通知ブロードキャスト (WebSocket撤去に伴い no-op)。
+
+    以前は WebSocket / RQ push を行っていたが Long Polling 完全移行により不要。
+    呼び出し箇所を残し将来 SSE 等へ差し替え可能な拡張ポイントとする。
+    """
+    return None
 
 # 許可遷移 (from -> to)
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {

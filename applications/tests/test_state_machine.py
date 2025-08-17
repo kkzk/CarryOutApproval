@@ -25,7 +25,7 @@ def test_approve_and_revert_flow():
     assert app.status == ApprovalStatus.PENDING
     assert app.approved_at is None
 
-    with patch('applications.realtime.broadcast_application_state') as mock_broadcast:
+    with patch('applications.state_machine.broadcast_application_state') as mock_broadcast:
         # Approve
         res1 = state_machine.change_status(app, ApprovalStatus.APPROVED, approver, comment='ok')
         app.refresh_from_db()

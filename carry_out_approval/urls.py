@@ -28,9 +28,7 @@ def root_redirect(request):
     else:
         return redirect('users:login')
 
-def websocket_test(request):
-    """WebSocket接続テストページ"""
-    return render(request, 'websocket_test.html')
+ # legacy WebSocket test view 削除済み (Long Polling 移行)
 
 urlpatterns = [
     path('', root_redirect, name='root'),
@@ -38,7 +36,7 @@ urlpatterns = [
     path('users/', include('users.urls')),
     path('applications/', include('applications.urls')),
     path('api/audit/', include('audit.urls')),
-    path('websocket-test/', websocket_test, name='websocket-test'),
+    # legacy: path('websocket-test/', websocket_test, name='websocket-test'),  # removed
     # path('django-rq/', include('django_rq.urls')),  # Long Polling 移行で RQ 管理UI停止
 ]
 

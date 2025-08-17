@@ -16,7 +16,7 @@ from .serializers import ApplicationSerializer, ApplicationCreateSerializer, App
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
 from . import state_machine
-from .realtime import broadcast_application_state
+from .state_machine import broadcast_application_state  # no-op 拡張ポイント
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
