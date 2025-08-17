@@ -421,28 +421,6 @@ function getOrCreateToastContainer() {
     return container;
 }
 
-// ===== 後方互換スタブ =====
-// 旧コードで利用されていた showApprovalNotification / showRejectionNotification
-// がテンプレートやキャッシュに残っていてもエラーにならないようトースト呼び出しへ委譲
-if (typeof window.showApprovalNotification === 'undefined') {
-    window.showApprovalNotification = function(application) {
-        if (!application) return;
-        showToast(`申請「${application.original_filename || ''}」が承認されました`, 'success');
-    };
-}
-if (typeof window.showRejectionNotification === 'undefined') {
-    window.showRejectionNotification = function(application) {
-        if (!application) return;
-        showToast(`申請「${application.original_filename || ''}」が却下されました`, 'warning');
-    };
-}
-if (typeof window.showNewApplicationNotification === 'undefined') {
-    window.showNewApplicationNotification = function(application) {
-        if (!application) return;
-        showToast(`新しい申請「${application.original_filename || ''}」が追加されました`, 'info');
-    };
-}
-
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
     // カード数の初期更新
