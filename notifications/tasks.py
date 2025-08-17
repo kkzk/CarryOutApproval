@@ -34,8 +34,11 @@ def create_and_dispatch_notification(*args, **kwargs):  # 互換 no-op
     return
 
 
-def send_kanban_update(user_id: int, action: str, application_id: int):
-    """カンバン更新イベントをWebSocket送信"""
+def send_kanban_update(user_id: int | None, action: str, application_id: int, username: str | None = None):
+    """カンバン更新イベントをWebSocket送信
+
+    user_id が取得できない (まだ Django User として存在しない) 場合は username グループへフォールバック送信。
+    """
     if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
         return
     from applications.models import Application
@@ -50,5 +53,8 @@ def send_kanban_update(user_id: int, action: str, application_id: int):
         'action': action,
         'application': _serialize_application(application),
     }
-    # ID グループのみ送信 (ユーザ名フォールバックはサービス層で User 解決できない場合に enqueue 自体をスキップ)
-    async_to_sync(channel_layer.group_send)(f"user_{user_id}", payload)
+    # 二重通知防止: user_id が取れた場合は ID グループのみ。取れない場合のみ username フォールバック。
+    if user_id is not None:
+        async_to_sync(channel_layer.group_send)(f"user_{user_id}", payload)
+    elif username and username.strip():
+        async_to_sync(channel_layer.group_send)(f"user_{username}", payload)

@@ -43,21 +43,27 @@ class NotificationService:
         if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
             return
         from django_rq import get_queue
-        # user が文字列(username) の場合 User を取得して id に変換
+        # user が文字列(username) の場合 User を取得して id に変換。存在しない場合は username グループ送信でフォールバック
+        username_for_fallback = None
+        user_id = None
         resolved = _resolve_user(user)
         if resolved is not None:
             user_id = resolved.id  # type: ignore[attr-defined]
+            username_for_fallback = getattr(resolved, 'username', None)
+        elif isinstance(user, int):
+            user_id = user
         else:
-            # 数値IDが直接渡されたケースを許容
-            if isinstance(user, int):
-                user_id = user
+            # 文字列ユーザ名（まだDBにユーザが存在しないケース）
+            if isinstance(user, str) and user.strip():
+                username_for_fallback = user.strip()
             else:
-                # User 解決不可なので送信スキップ
-                return
+                return  # 送信不能
+
         q = get_queue('notifications')
         q.enqueue(
             'notifications.tasks.send_kanban_update',
             user_id=user_id,
+            username=username_for_fallback,
             action=action,
             application_id=getattr(application, 'id'),  # type: ignore[arg-type]
         )
@@ -67,7 +73,19 @@ class NotificationService:
         """新規申請の通知"""
         if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
             return
-    # 永続通知（DB保存）は不要化: create_notification 呼び出し削除
+        # 重複防止: 同一 application.id の new_application を短時間で多重送信しない
+        try:
+            from django_rq import get_queue
+            q = get_queue('notifications')
+            conn = q.connection
+            key = f"notif:new_app:{application.id}"
+            # 10秒以内の再送抑止 (SETNX)
+            added = conn.set(key, '1', nx=True, ex=10)
+            if not added:
+                return  # 既に送信済み
+        except Exception:
+            # 失敗時はフォールバックでそのまま続行（最悪二重になるが通知欠落よりは許容）
+            pass
         NotificationService.send_kanban_update_notification(
             user=application.approver,
             action='new_application',
@@ -79,7 +97,18 @@ class NotificationService:
         """申請承認の通知"""
         if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
             return
-    # 永続通知は生成せず Kanban 更新のみ送信
+        # 冪等化: 承認通知の重複送信防止 (5秒)
+        try:
+            from django_rq import get_queue
+            q = get_queue('notifications')
+            conn = q.connection
+            key = f"notif:approved:{application.id}"
+            added = conn.set(key, '1', nx=True, ex=5)
+            if not added:
+                return
+        except Exception:
+            pass
+        # 永続通知は生成せず Kanban 更新のみ送信
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
             action='application_approved',
@@ -91,7 +120,18 @@ class NotificationService:
         """申請却下の通知"""
         if not getattr(settings, 'NOTIFICATIONS_ENABLED', True):
             return
-    # 永続通知は生成せず Kanban 更新のみ送信
+        # 冪等化: 却下通知の重複送信防止 (5秒)
+        try:
+            from django_rq import get_queue
+            q = get_queue('notifications')
+            conn = q.connection
+            key = f"notif:rejected:{application.id}"
+            added = conn.set(key, '1', nx=True, ex=5)
+            if not added:
+                return
+        except Exception:
+            pass
+        # 永続通知は生成せず Kanban 更新のみ送信
         NotificationService.send_kanban_update_notification(
             user=application.applicant,
             action='application_rejected',

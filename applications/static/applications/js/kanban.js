@@ -39,6 +39,28 @@ function initializeWebSocket() {
 // WebSocketメッセージの処理
 function handleWebSocketMessage(data) {
     if (data.type === 'kanban_update') {
+        // 重複イベント防止: 同一 (action, application.id) を直近1.5秒以内に処理済みならスキップ
+        if (!window.__kanbanEventCache) {
+            window.__kanbanEventCache = new Map();
+        }
+        try {
+            const key = data.action + ':' + (data.application && data.application.id);
+            const now = Date.now();
+            // 期限切れ掃除 (最大50件)
+            if (window.__kanbanEventCache.size > 80) {
+                for (const [k, v] of window.__kanbanEventCache.entries()) {
+                    if (now - v > 3000) window.__kanbanEventCache.delete(k);
+                }
+            }
+            const last = window.__kanbanEventCache.get(key);
+            if (last && (now - last) < 5000) {
+                console.debug('Duplicate kanban_update skipped', key);
+                return;
+            }
+            window.__kanbanEventCache.set(key, now);
+        } catch (e) {
+            console.warn('kanban_update dedupe error', e);
+        }
         handleKanbanUpdate(data);
     }
 }
@@ -53,7 +75,12 @@ function handleKanbanUpdate(data) {
             showToast(`新しい申請「${application.original_filename}」が追加されました`, 'info');
             break;
         case 'application_approved':
-            moveApplicationCard(application.id, 'approved');
+            // 既に approved カラムにあれば再処理しない
+            if (!isCardInColumn(application.id, 'approved')) {
+                moveApplicationCard(application.id, 'approved');
+            } else {
+                console.debug('Skip duplicate move (approved)', application.id);
+            }
             // 申請者と承認者で異なるメッセージ
             if (isApplicantView()) {
                 // モーダルはブロッキングなのでトーストのみ
@@ -63,7 +90,11 @@ function handleKanbanUpdate(data) {
             }
             break;
         case 'application_rejected':
-            moveApplicationCard(application.id, 'rejected');
+            if (!isCardInColumn(application.id, 'rejected')) {
+                moveApplicationCard(application.id, 'rejected');
+            } else {
+                console.debug('Skip duplicate move (rejected)', application.id);
+            }
             // 申請者と承認者で異なるメッセージ
             if (isApplicantView()) {
                 showToast(`申請「${application.original_filename}」が却下されました`, 'warning');
@@ -158,6 +189,13 @@ function moveApplicationCard(applicationId, newStatus) {
     // 念のため遅延再計算 (アニメ/再描画後)
     setTimeout(updateColumnCounts, 200);
     }, 150);
+}
+
+// 指定IDのカードが特定ステータスカラム内に存在するか
+function isCardInColumn(applicationId, status) {
+    const column = document.getElementById(`${status}-column`);
+    if (!column) return false;
+    return !!column.querySelector(`.application-card[data-id="${applicationId}"]`);
 }
 
 // Sortable.jsでドラッグ&ドロップを初期化

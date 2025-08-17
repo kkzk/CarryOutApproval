@@ -152,8 +152,8 @@ def update_application_status(request):
             # 承認者の場合
             template_name = 'applications/approver_application_card.html'
         else:
-            # その他の場合（念のため）
-            template_name = 'applications/application_card.html'
+            # 想定外パス: デフォルトは申請者カードを使用（application_card.html は廃止）
+            template_name = 'applications/applicant_application_card.html'
             
         card_html = render_to_string(template_name, {
             'application': application
@@ -196,8 +196,8 @@ def application_card(request, pk):
         # 承認者の場合
         template_name = 'applications/approver_application_card.html'
     else:
-        # その他の場合（念のため）
-        template_name = 'applications/application_card.html'
+        # 想定外パス: デフォルトは申請者カードを使用
+        template_name = 'applications/applicant_application_card.html'
         
     card_html = render_to_string(template_name, {
         'application': application
