@@ -17,6 +17,7 @@ from users.utils import get_approvers_for_user
 from django.views.decorators.http import require_POST
 from django.utils.decorators import method_decorator
 from django.contrib.auth.decorators import login_required
+from .login_feedback import build_login_feedback
 
 
 User = get_user_model()
@@ -57,34 +58,32 @@ class UserSearchView(generics.ListAPIView):
 
 class LoginView(View):
     """ログイン画面とログイン処理"""
-    
     def get(self, request):
         if request.user.is_authenticated:
             return redirect('applications:kanban-board')
-        return render(request, 'users/login.html')
-    
+        context = build_login_feedback(request)
+        return render(request, 'users/login.html', context)
+
     def post(self, request):
         username = request.POST.get('username')
         password = request.POST.get('password')
-        
+
         if username and password:
             user = authenticate(request, username=username, password=password)
             if user is not None and user.is_active:
-                # Django標準のlogin関数を使用（自動的にセッションが作成される）
                 login(request, user)
-                
                 next_url = request.GET.get('next', 'applications:kanban-board')
                 return redirect(next_url)
             else:
-                # 認証エラーメッセージがある場合は表示
                 if hasattr(request, 'auth_error_messages') and request.auth_error_messages:
                     messages.error(request, request.auth_error_messages[0])
                 else:
                     messages.error(request, 'ユーザー名またはパスワードが正しくありません。')
         else:
             messages.error(request, 'ユーザー名とパスワードを入力してください。')
-        
-        return render(request, 'users/login.html')
+
+        context = build_login_feedback(request)
+        return render(request, 'users/login.html', context)
 
 
 class LogoutView(View):

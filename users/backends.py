@@ -1,26 +1,13 @@
-# Windows compatible LDAP backend using ldap3
-#
-# 主な接続失敗・認証失敗の原因と、それに対応するログメッセージの例です。
-#
-# 1. サーバーのアドレスやポートが間違っている
-#   - ログ例: `desc=Can't contact LDAP server`
-#   - 発生箇所: Bind (接続試行) 時
-#
-# 2. 認証情報 (ユーザー名/パスワード) が無効
-#   - ログ例: `desc=invalidCredentials`
-#   - 発生箇所: Bind (認証) 時
-#   - 補足: Active Directory から返されるエラーコード (例: 52e) があります。
-#
-# 3. ネットワーク接続の問題 (ファイアウォール、VPN など)
-#   - ログ例: `desc=Connect error` または `desc=Can't contact LDAP server`
-#   - 発生箇所: StartTLS や Bind (接続試行) 時
-#   - 補足: タイムアウトや接続拒否が発生します。
-#
-# 4. STARTTLS の失敗 (証明書の問題など)
-#   - ログ例: `LDAP StartTLS failed ... desc=Connect error`
-#   - 発生箇所: StartTLS 実行時
-#   - 補足: サーバーがSTARTTLSをサポートしていない、またはクライアントがサーバー証明書を検証できない場合に発生します。
-#
+"""Windows compatible LDAP backend using ldap3.
+
+ユーザー表示エラー分類 (各 2 文: 要約。対処。):
+dns         : ActiveDirectory サーバが見つかりません。/ 【保守担当】アプリケーションサーバの DNS 設定を確認してください。
+unreachable : ActiveDirectory サーバに到達できません。/ 【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。
+tls         : ネットワークレベルの暗号化が要求されました。/ 【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。
+credentials : IDまたはパスワードが違います。/ 正しいIDおよびパスワードを入力してください。
+
+コード内コメントで # dns / # unreachable / # tls / # credentials を付記。
+"""
 
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth import get_user_model
@@ -231,10 +218,10 @@ class WindowsLDAPBackend(ModelBackend):
             
         except ImportError:  # noqa: BLE001
             logger.exception("ldap3 not installed | user=%s", username)
-            return None, "認証システムの設定に問題があります。システム管理者に連絡してください。"
+            return None, "ActiveDirectory サーバが見つかりません。【保守担当】アプリケーションサーバの DNS 設定を確認してください。"  # dns
         except Exception:  # noqa: BLE001
             logger.exception("LDAP unexpected error | user=%s", username)
-            return None, "認証処理中に予期せぬエラーが発生しました。システム管理者に連絡してください。"
+            return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
 
     def _attempt_single_candidate(self, *, username, password, server, host, host_is_ip, cfg, force_starttls,
                                    label, bind_user, auth_kind, last_errors):
@@ -249,15 +236,15 @@ class WindowsLDAPBackend(ModelBackend):
         try:
             conn = self._prepare_connection(server, bind_user, password, auth_kind)
             if not cfg.use_ssl and force_starttls and not self._start_tls_if_needed(conn, host, bind_user, label, last_errors):
-                return None, "セキュアな接続（STARTTLS）の確立に失敗しました。"
+                return None, "ネットワークレベルの暗号化が要求されました。【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。"  # tls
             
             if not self._bind_connection(conn, host, host_is_ip, cfg.use_ssl, force_starttls, label, auth_kind, last_errors):
                 # 最後のエラーからメッセージを生成
                 if last_errors:
                     _, _, result = last_errors[-1]
                     if isinstance(result, dict) and result.get('description') == 'invalidCredentials':
-                        return None, "ユーザー名またはパスワードが正しくありません。"
-                return None, "LDAPサーバーへの接続に失敗しました。"
+                        return None, "IDまたはパスワードが違います。正しいIDおよびパスワードを入力してください。"  # credentials
+                return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
             
             entry = self._search_user_entry(conn, username, host, label, cfg.search_base, last_errors)
             if not entry:
@@ -281,12 +268,12 @@ class WindowsLDAPBackend(ModelBackend):
                 extra={'ldap': {'attempt': label}}
             )
             last_errors.append((label, str(e), {'description': 'exception'}))
-            return None, "認証処理中にエラーが発生しました。"
+            return None, "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
             
     def _generate_user_friendly_error(self, last_errors):
         """エラーの詳細からユーザーに表示するメッセージを生成"""
         if not last_errors:
-            return "認証に失敗しました。"
+            return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # unreachable
             
         # 直近のエラー (最後) を抽出
         _, last_error, last_result = last_errors[-1]
@@ -303,44 +290,29 @@ class WindowsLDAPBackend(ModelBackend):
                     return True
             return False
 
-        # ========== 分類ポリシー ==========
-        # カテゴリ1 (ユーザ自己解決): 資格情報誤り
-        # カテゴリ2 (運用窓口対応): ネットワーク不通 / LDAP接続はできたがユーザ未登録（このケースは呼び出し側で直接返却されるが保険）
-        # カテゴリ3 (保守SE): DNS解決不可 / 設定不足 / TLS失敗 (自己解決不可) / 想定外例外
+    # 分類: credentials / unreachable / dns / tls
 
         # --- 1) invalidCredentials ---
-        if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':
-            return (
-                "【資格情報誤り】ユーザー名またはパスワードが正しくありません。 "  # カテゴリ1
-                "入力を再確認し、CapsLock/VPN/IME状態を確認して再試行してください。"
-            )
+        if isinstance(last_result, dict) and last_result.get('description') == 'invalidCredentials':  # credentials
+            return "IDまたはパスワードが違います。正しいIDおよびパスワードを入力してください。"
 
         # --- 2) ネットワーク / 接続不可 ---
         if any_error_contains(
             "can't contact ldap server", "connect error", "socket connection error", "timeout", "timed out",
             "unreachable", "connection refused", "10060"
-        ):
-            return (
-                "【接続不可/タイムアウト】LDAPサーバーに到達できません (ネットワーク/接続エラー)。 "
-                "LAN/無線/VPN を確認し問題なければ、運用窓口へ『LDAPサーバーに接続不可 (ネットワーク不通/タイムアウト)』と連絡してください。"
-            )
+        ):  # unreachable
+            return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"
 
         # --- 2b) サーバーアドレス不正 / DNS 解決不能 ---
-        if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):
-            return (
-                "【DNS解決不可】LDAPサーバーのホスト名/アドレスを解決できません。 "
-                "運用窓口へ『LDAPサーバー設定(ホスト名/ポート)要確認』と連絡してください。"
-            )
+        if any_error_contains("invalid server address", "unknown host", "name or service not known", "nodename nor servname provided"):  # dns
+            return "ActiveDirectory サーバが見つかりません。【保守担当】アプリケーションサーバの DNS 設定を確認してください。"
 
         # --- 3) StartTLS / TLS 関連 (ユーザ操作では解決困難) ---
-        if any_error_contains("starttls", "tls", "ssl"):
-            return (
-                "【暗号化初期化失敗】セキュア接続の初期化に失敗しました。 "  # カテゴリ3
-                "運用窓口経由で保守担当へ『LDAP StartTLS/SSL 失敗』と連絡してください。"
-            )
+        if any_error_contains("starttls", "tls", "ssl"):  # tls
+            return "ネットワークレベルの暗号化が要求されました。【運用窓口】ActiveDirectoryサーバの設定および証明書を確認してください。"
 
         # --- 4) その他の例外 (設定不足・不明) ---
-        return "【分類不能】認証に失敗しました。運用窓口へ状況を報告し、必要に応じて保守担当へエスカレーションしてください。"
+        return "ActiveDirectory サーバに到達できません。【運用窓口】ActiveDirectoryサーバが稼働しているか確認してください。"  # fallback unreachable
 
     # -------- 認証補助 (分割) --------
     def _generate_bind_candidates(self, username: str, cfg: LDAPRuntimeConfig) -> Iterable[Tuple[str, str, Optional[str]]]:
