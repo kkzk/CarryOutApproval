@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.db import transaction
 from .models import Application, ApprovalStatus
 from audit.models import AuditLog
-from notifications.services import NotificationService
+from .realtime import broadcast_application_state
 
 # 許可遷移 (from -> to)
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -76,5 +76,6 @@ def change_status(application: Application, new_status: str, actor, comment: str
             details=f"{old} -> {new_status} comment={comment or 'なし'}"
         )
 
-    NotificationService.broadcast_application_state(application)
+    # Long Polling クライアントは更新後の差分取得で同期するため、ここでは no-op ブロードキャスト関数を呼ぶのみ。
+    broadcast_application_state(application)
     return TransitionResult(application, old, new_status, changed=True)

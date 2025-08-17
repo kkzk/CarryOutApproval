@@ -16,6 +16,7 @@ from .serializers import ApplicationSerializer, ApplicationCreateSerializer, App
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
 from . import state_machine
+from .realtime import broadcast_application_state
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
@@ -54,9 +55,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             action="create",
             details=f"申請を作成しました。ファイル: {application.original_filename}"
         )
-        # 初期状態を双方へ通知 (pending)
-        from notifications.services import NotificationService
-        NotificationService.broadcast_application_state(application)
+        # 初期状態通知 (Long Polling 用 no-op フック)
+        broadcast_application_state(application)
     
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def update_status(self, request, pk=None):

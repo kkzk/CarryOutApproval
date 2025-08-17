@@ -3,7 +3,7 @@
 Long Polling 移行後のカンバン更新差分取得デモスクリプト。
 
 目的:
- 1. 申請 (Application) を作成 → Poll API (/notifications/poll/kanban/) で更新検出
+ 1. 申請 (Application) を作成 → Poll API (/applications/poll/updates/?scope=kanban) で更新検出
  2. ステータス変更 (承認) 後に再度 Poll して差分が返ることを確認
 
 旧 WebSocket / RQ ベースの push 通知は無効化されているため、本スクリプトは
@@ -82,11 +82,11 @@ def approve_application(application):
     print(f"申請承認完了: ID={application.id} new_status={application.status}")
 
 
-def poll(client: Client, since_iso: str | None):
-    params = {}
+def poll(client: Client, since_iso: str | None, scope: str = 'kanban'):
+    params = {'scope': scope}
     if since_iso:
         params['since'] = since_iso
-    resp = client.get('/notifications/poll/kanban/', params)
+    resp = client.get('/applications/poll/updates/', params)
     try:
         data = json.loads(resp.content.decode('utf-8'))
     except json.JSONDecodeError:
@@ -104,7 +104,7 @@ def main():
 
     # 過去時刻を since に設定 (全件取得トリガ)
     since = (timezone.now() - timedelta(minutes=10)).isoformat()
-    first = poll(client, since)
+    first = poll(client, since, scope='kanban')
     print("初回 Poll 応答:", json.dumps(first, ensure_ascii=False, indent=2)[:400])
     latest = first.get('latest') if first else None
 
@@ -112,7 +112,7 @@ def main():
     approve_application(application)
 
     # 2回目 poll (最新 since=latest)
-    second = poll(client, latest)
+    second = poll(client, latest, scope='kanban')
     print("\n承認後 Poll 応答:", json.dumps(second, ensure_ascii=False, indent=2)[:400])
 
     print("\n=== 完了: 差分 (applications 長) 初回={0} / 2回目={1} ===".format(

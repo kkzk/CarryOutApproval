@@ -55,7 +55,6 @@ INSTALLED_APPS = [
     'applications',
     'users', 
     'audit',
-    'notifications',
 ]
 
 # 通知機能 ON/OFF フラグ
@@ -97,7 +96,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'notifications.context_processors.long_polling_flag',
+                'applications.context_processors.long_polling_flag',
             ],
         },
     },

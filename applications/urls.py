@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from . import polling
 
 app_name = 'applications'
 
@@ -8,6 +9,8 @@ router = DefaultRouter()
 router.register('', views.ApplicationViewSet)
 
 urlpatterns = [
+    # Long Polling 共通差分取得エンドポイント
+    path('poll/updates/', polling.poll_updates, name='poll-updates'),
     # Template views - 詳細なパターンを先に配置
     path('<int:pk>/detail/', views.application_detail_modal, name='application-detail-modal'),
     path('<int:pk>/card/', views.application_card, name='application-card'),
