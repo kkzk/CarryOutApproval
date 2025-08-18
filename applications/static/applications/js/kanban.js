@@ -325,12 +325,6 @@ function showApplicationDetail(applicationId) {
     });
 }
 
-// 新規申請モーダルを表示
-function showNewApplicationModal() {
-    const modal = new bootstrap.Modal(document.getElementById('newApplicationModal'));
-    modal.show();
-}
-
 // カラムのカード数を更新
 function updateColumnCounts() {
     const statuses = ['pending', 'approved', 'rejected'];
@@ -430,24 +424,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 定期的に更新をチェック（オプション）
     // setInterval(checkForUpdates, 30000); // 30秒ごと
-});
-
-// キーボードショートカット
-document.addEventListener('keydown', function(e) {
-    // Ctrl+N で新規申請モーダル
-    if (e.ctrlKey && e.key === 'n') {
-        e.preventDefault();
-        showNewApplicationModal();
-    }
-    
-    // Escキーでモーダルを閉じる
-    if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal.show');
-        modals.forEach(modal => {
-            const bsModal = bootstrap.Modal.getInstance(modal);
-            if (bsModal) bsModal.hide();
-        });
-    }
 });
 
 // ===== ロングポーリング (段階的移行) =====

@@ -116,30 +116,6 @@
             </div>
         </div>
     </div>
-    {# 新規申請モーダル - 作成ページへの誘導用 #}
-    <div class="modal fade" id="newApplicationModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-plus-circle"></i> 新規申請
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted">
-                        <i class="bi bi-info-circle"></i>
-                        新規申請作成ページに移動します。
-                    </p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-                    <a href="{% url "applications:create-application" %}"
-                       class="btn btn-primary">申請作成ページへ</a>
-                </div>
-            </div>
-        </div>
-    </div>
 {% endblock content %}
 {# 追加のJavaScriptを読み込むブロック #}
 {% block extra_js %}
