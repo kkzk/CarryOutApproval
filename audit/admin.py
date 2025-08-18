@@ -17,3 +17,7 @@ class AuditLogAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         # 監査ログは変更できない
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        # 監査ログは削除できない
+        return False
