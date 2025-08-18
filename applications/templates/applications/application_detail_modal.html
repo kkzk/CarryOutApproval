@@ -17,16 +17,47 @@
                     <td>#{{ application.id }}</td>
                 </tr>
                 <tr>
-                    <th>ファイル名:</th>
-                    <td>{{ application.original_filename }}</td>
-                </tr>
-                <tr>
-                    <th>ファイルサイズ:</th>
-                    <td>{{ application.file_size|filesizeformat }}</td>
+                    <th>ファイル:</th>
+                    <td>
+                        {% if application.files.exists %}
+                            {% if application.file_count == 1 %}
+                                {{ application.files.first.original_filename }}
+                                <br><small class="text-muted">{{ application.files.first.file_size|filesizeformat }}</small>
+                            {% else %}
+                                {{ application.file_count }}個のファイル
+                                <br><small class="text-muted">合計: {{ application.total_file_size|filesizeformat }}</small>
+                                <ul class="list-unstyled mt-2 mb-0">
+                                    {% for file in application.files.all %}
+                                        <li class="d-flex justify-content-between align-items-center py-1">
+                                            <span>
+                                                <i class="fas fa-file me-1"></i>{{ file.original_filename }}
+                                            </span>
+                                            <small class="text-muted">{{ file.file_size|filesizeformat }}</small>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        {% elif application.primary_filename %}
+                            {{ application.primary_filename }}
+                            <br><small class="text-muted">{{ application.file_size|filesizeformat }}</small>
+                        {% else %}
+                            <span class="text-muted">ファイルなし</span>
+                        {% endif %}
+                    </td>
                 </tr>
                 <tr>
                     <th>形式:</th>
-                    <td>{{ application.content_type }}</td>
+                    <td>
+                        {% if application.files.exists %}
+                            {% for file in application.files.all %}
+                                {{ file.content_type }}{% if not forloop.last %}, {% endif %}
+                            {% endfor %}
+                        {% elif application.content_type %}
+                            {{ application.content_type }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                 </tr>
                 <tr>
                     <th>ステータス:</th>
@@ -133,11 +164,39 @@
 </div>
 <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-    {% if application.file %}
-        <a href="{{ application.file.url }}"
-           target="_blank"
-           class="btn btn-outline-primary">
-            <i class="bi bi-download"></i> ダウンロード
-        </a>
+    {% if application.files.exists or application.file %}
+        {% if application.files.exists and application.file_count == 1 %}
+            <a href="{{ application.files.first.file.url }}"
+               target="_blank"
+               class="btn btn-outline-primary">
+                <i class="bi bi-download"></i> ダウンロード
+            </a>
+        {% elif application.files.exists and application.file_count > 1 %}
+            <div class="btn-group">
+                <button type="button" 
+                        class="btn btn-outline-primary dropdown-toggle" 
+                        data-bs-toggle="dropdown" 
+                        aria-expanded="false">
+                    <i class="bi bi-download"></i> ダウンロード
+                </button>
+                <ul class="dropdown-menu">
+                    {% for file in application.files.all %}
+                        <li>
+                            <a class="dropdown-item" 
+                               href="{{ file.file.url }}" 
+                               target="_blank">
+                                <i class="fas fa-file me-2"></i>{{ file.original_filename }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% elif application.file %}
+            <a href="{{ application.file.url }}"
+               target="_blank"
+               class="btn btn-outline-primary">
+                <i class="bi bi-download"></i> ダウンロード
+            </a>
+        {% endif %}
     {% endif %}
 </div>

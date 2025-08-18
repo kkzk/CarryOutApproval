@@ -11,7 +11,7 @@ from django.db import transaction  # left for potential future batch ops (state_
 from django.db import models
 from django.template.loader import render_to_string
 from django.utils import timezone  # may be used elsewhere; retained
-from .models import Application, ApprovalStatus
+from .models import Application, ApprovalStatus, ApplicationFile
 from .serializers import ApplicationSerializer, ApplicationCreateSerializer, ApplicationStatusUpdateSerializer
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
@@ -187,12 +187,24 @@ def create_application(request):
                 with transaction.atomic():
                     application = form.save()
                     
+                    # 複数ファイルの保存
+                    files = request.FILES.getlist('attachments')
+                    for file in files:
+                        ApplicationFile.objects.create(
+                            application=application,
+                            file=file,
+                            original_filename=file.name,
+                            file_size=file.size,
+                            content_type=getattr(file, 'content_type', 'application/octet-stream')
+                        )
+                    
                     # 監査ログを記録
+                    file_names = [f.name for f in files] if files else []
                     AuditLog.objects.create(
                         user=request.user,
                         application=application,
                         action="create",
-                        details=f"申請を作成しました。ファイル: {application.original_filename}"
+                        details=f"申請を作成しました。ファイル数: {len(file_names)}, ファイル: {', '.join(file_names)}"
                     )
                     
                     # 通知は post_save シグナルで処理（ここでは重複送信しない）

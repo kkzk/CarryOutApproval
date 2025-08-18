@@ -107,12 +107,31 @@
                                                 <td>
                                                     <div class="d-flex align-items-center">
                                                         <i class="fas fa-file me-2 text-muted"></i>
-                                                        <span class="text-truncate filename-maxwidth"
-                                                              title="{{ application.original_filename }}">
-                                                            {{ application.original_filename }}
-                                                        </span>
+                                                        {% if application.files.exists %}
+                                                            <span class="text-truncate filename-maxwidth"
+                                                                  title="ファイル数: {{ application.file_count }}個">
+                                                                {% if application.file_count == 1 %}
+                                                                    {{ application.files.first.original_filename }}
+                                                                {% else %}
+                                                                    {{ application.files.first.original_filename }} 他{{ application.file_count|add:"-1" }}個
+                                                                {% endif %}
+                                                            </span>
+                                                        {% elif application.primary_filename %}
+                                                            <span class="text-truncate filename-maxwidth"
+                                                                  title="{{ application.primary_filename }}">
+                                                                {{ application.primary_filename }}
+                                                            </span>
+                                                        {% else %}
+                                                            <span class="text-muted">ファイルなし</span>
+                                                        {% endif %}
                                                     </div>
-                                                    <small class="text-muted">{{ application.file_size|filesizeformat }}</small>
+                                                    <small class="text-muted">
+                                                        {% if application.files.exists %}
+                                                            {{ application.total_file_size|filesizeformat }} ({{ application.file_count }}個)
+                                                        {% elif application.file_size %}
+                                                            {{ application.file_size|filesizeformat }}
+                                                        {% endif %}
+                                                    </small>
                                                 </td>
                                                 <td>
                                                     {% if application.status == 'pending' %}
@@ -148,13 +167,43 @@
                                                                 onclick="loadApplicationDetail({{ application.id }})">
                                                             <i class="fas fa-eye"></i>
                                                         </button>
-                                                        {% if application.file %}
-                                                            <a href="{{ application.file.url }}"
-                                                               class="btn btn-outline-secondary btn-sm"
-                                                               target="_blank"
-                                                               title="ファイルを開く">
-                                                                <i class="fas fa-download"></i>
-                                                            </a>
+                                                        {% if application.files.exists or application.file %}
+                                                            {% if application.files.exists and application.file_count == 1 %}
+                                                                <a href="{{ application.files.first.file.url }}"
+                                                                   class="btn btn-outline-secondary btn-sm"
+                                                                   target="_blank"
+                                                                   title="ファイルをダウンロード">
+                                                                    <i class="fas fa-download"></i>
+                                                                </a>
+                                                            {% elif application.files.exists and application.file_count > 1 %}
+                                                                <div class="btn-group">
+                                                                    <button type="button" 
+                                                                            class="btn btn-outline-secondary btn-sm dropdown-toggle" 
+                                                                            data-bs-toggle="dropdown" 
+                                                                            aria-expanded="false"
+                                                                            title="ファイルをダウンロード">
+                                                                        <i class="fas fa-download"></i>
+                                                                    </button>
+                                                                    <ul class="dropdown-menu">
+                                                                        {% for file in application.files.all %}
+                                                                            <li>
+                                                                                <a class="dropdown-item" 
+                                                                                   href="{{ file.file.url }}" 
+                                                                                   target="_blank">
+                                                                                    <i class="fas fa-file me-2"></i>{{ file.original_filename }}
+                                                                                </a>
+                                                                            </li>
+                                                                        {% endfor %}
+                                                                    </ul>
+                                                                </div>
+                                                            {% elif application.file %}
+                                                                <a href="{{ application.file.url }}"
+                                                                   class="btn btn-outline-secondary btn-sm"
+                                                                   target="_blank"
+                                                                   title="ファイルをダウンロード">
+                                                                    <i class="fas fa-download"></i>
+                                                                </a>
+                                                            {% endif %}
                                                         {% endif %}
                                                     </div>
                                                 </td>

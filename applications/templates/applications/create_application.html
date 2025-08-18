@@ -76,19 +76,30 @@
                                     </div>
                                     <!-- ファイル選択 -->
                                     <div class="mb-3">
-                                        <label for="{{ form.file.id_for_label }}" class="form-label required">
-                                            <i class="fas fa-file me-1"></i>{{ form.file.label }}
+                                        <label for="{{ form.attachments.id_for_label }}" class="form-label required">
+                                            <i class="fas fa-file me-1"></i>{{ form.attachments.label }}
                                         </label>
-                                        {{ form.file }}
-                                        {% if form.file.help_text %}<div class="form-text">{{ form.file.help_text }}</div>{% endif %}
-                                        {% if form.file.errors %}
+                                        {{ form.attachments }}
+                                        {% if form.attachments.help_text %}<div class="form-text">{{ form.attachments.help_text }}</div>{% endif %}
+                                        {% if form.attachments.errors %}
                                             <div class="invalid-feedback d-block">
-                                                {% for error in form.file.errors %}{{ error }}{% endfor %}
+                                                {% for error in form.attachments.errors %}{{ error }}{% endfor %}
                                             </div>
                                         {% endif %}
                                         <div class="form-text">
                                             <i class="fas fa-info-circle me-1"></i>
-                                            最大ファイルサイズ: 10MB（対応形式：PDF, Word, Excel, 画像等）
+                                            最大ファイルサイズ: 10MB（1ファイルあたり）、最大ファイル数: 10個
+                                        </div>
+                                        <!-- 選択ファイル一覧表示エリア -->
+                                        <div id="selectedFiles" class="mt-2" style="display: none;">
+                                            <div class="card">
+                                                <div class="card-header">
+                                                    <h6 class="mb-0">選択されたファイル</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <ul id="fileList" class="list-unstyled mb-0"></ul>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                     <!-- 申請コメント -->
@@ -144,7 +155,6 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('applicationForm');
     const submitBtn = document.getElementById('submitBtn');
-    const fileInput = document.querySelector('input[type="file"]');
     // 承認者検索用データ
     // 候補JSONをscriptタグ経由で安全に取得
     console.log('[create_application] DOMContentLoaded start');
@@ -212,23 +222,67 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // ファイル選択時の処理
+    const fileInput = document.querySelector('input[name="attachments"]');
+    const selectedFilesDiv = document.getElementById('selectedFiles');
+    const fileList = document.getElementById('fileList');
+    
     if (fileInput) {
         fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                // ファイルサイズチェック (10MB)
-                const maxSize = 10 * 1024 * 1024;
-                if (file.size > maxSize) {
-                    alert('ファイルサイズが大きすぎます。10MB以下のファイルを選択してください。');
-                    this.value = '';
-                    return;
-                }
-                
-                // ファイル名表示
-                const fileName = file.name;
-                const fileSize = (file.size / 1024 / 1024).toFixed(2);
-                console.log(`選択されたファイル: ${fileName} (${fileSize}MB)`);
+            const files = Array.from(e.target.files);
+            
+            if (files.length === 0) {
+                selectedFilesDiv.style.display = 'none';
+                return;
             }
+            
+            // ファイル数チェック
+            if (files.length > 10) {
+                alert('ファイルは最大10個まで選択できます。');
+                this.value = '';
+                selectedFilesDiv.style.display = 'none';
+                return;
+            }
+            
+            // ファイルサイズチェック (10MB per file)
+            const maxSize = 10 * 1024 * 1024;
+            let totalSize = 0;
+            let hasError = false;
+            
+            files.forEach(file => {
+                if (file.size > maxSize) {
+                    alert(`ファイル "${file.name}" のサイズが大きすぎます。10MB以下のファイルを選択してください。`);
+                    hasError = true;
+                }
+                totalSize += file.size;
+            });
+            
+            if (hasError) {
+                this.value = '';
+                selectedFilesDiv.style.display = 'none';
+                return;
+            }
+            
+            // ファイル一覧を表示
+            fileList.innerHTML = '';
+            files.forEach((file, index) => {
+                const li = document.createElement('li');
+                const fileSize = (file.size / 1024 / 1024).toFixed(2);
+                li.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center py-1">
+                        <span>
+                            <i class="fas fa-file me-2"></i>
+                            ${file.name}
+                        </span>
+                        <small class="text-muted">${fileSize}MB</small>
+                    </div>
+                `;
+                fileList.appendChild(li);
+            });
+            
+            selectedFilesDiv.style.display = 'block';
+            
+            const totalSizeMB = (totalSize / 1024 / 1024).toFixed(2);
+            console.log(`選択されたファイル: ${files.length}個, 合計サイズ: ${totalSizeMB}MB`);
         });
     }
     
