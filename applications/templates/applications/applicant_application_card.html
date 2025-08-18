@@ -34,29 +34,29 @@
                 </div>
             </div>
         </div>
-        <div class="card-body">
-            <div class="card-text">
-                <!-- 申請日時を目立つように -->
-                <div class="mb-2 p-2 bg-light rounded">
-                    <i class="bi bi-calendar-event text-primary me-1"></i>
-                    <strong>申請日:</strong> {{ application.created_at|naturaltime }}
-                    {% if application.file_size %}
-                        <br>
-                        <i class="bi bi-file-bar-graph me-1"></i>
-                        ファイルサイズ: {{ application.file_size|filesizeformat }}
+        <div class="expandable-content">
+            <div class="card-body">
+                <div class="card-text">
+                    <!-- 申請日時を目立つように -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <i class="bi bi-calendar-event text-primary me-1"></i>
+                        <strong>申請日:</strong> {{ application.created_at|naturaltime }}
+                        {% if application.file_size %}
+                            <br>
+                            <i class="bi bi-file-bar-graph me-1"></i>
+                            ファイルサイズ: {{ application.file_size|filesizeformat }}
+                        {% endif %}
+                    </div>
+                    <!-- 申請者のコメント（自分のコメントなので強調） -->
+                    {% if application.comment %}
+                        <div class="mb-1">
+                            <i class="bi bi-chat-left-text text-info me-1"></i>
+                            <strong>申請理由:</strong>
+                            <br>
+                            {{ application.comment|truncatechars:60 }}
+                        </div>
                     {% endif %}
                 </div>
-                <!-- 申請者のコメント（自分のコメントなので強調） -->
-                {% if application.comment %}
-                    <div class="mb-1">
-                        <i class="bi bi-chat-left-text text-info me-1"></i>
-                        <strong>申請理由:</strong>
-                        <br>
-                        {{ application.comment|truncatechars:60 }}
-                    </div>
-                {% endif %}
-            </div>
-            <div class="expandable-content">
                 <!-- 承認者からのフィードバック（申請者にとって重要） -->
                 {% if application.approval_comment %}
                     <div class="card-text mt-2">
