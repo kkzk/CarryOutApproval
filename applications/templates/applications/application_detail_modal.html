@@ -5,11 +5,12 @@
     </h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
 </div>
-
 <div class="modal-body">
     <div class="row">
         <div class="col-md-6">
-            <h6><i class="bi bi-info-circle"></i> 基本情報</h6>
+            <h6>
+                <i class="bi bi-info-circle"></i> 基本情報
+            </h6>
             <table class="table table-sm">
                 <tr>
                     <th width="100">申請ID:</th>
@@ -30,11 +31,7 @@
                 <tr>
                     <th>ステータス:</th>
                     <td>
-                        <span class="badge 
-                            {% if application.status == 'pending' %}bg-warning text-dark
-                            {% elif application.status == 'approved' %}bg-success
-                            {% elif application.status == 'rejected' %}bg-danger
-                            {% else %}bg-secondary{% endif %}">
+                        <span class="badge {% if application.status == 'pending' %}bg-warning text-dark {% elif application.status == 'approved' %}bg-success {% elif application.status == 'rejected' %}bg-danger {% else %}bg-secondary{% endif %}">
                             {{ application.get_status_display }}
                         </span>
                     </td>
@@ -42,7 +39,9 @@
             </table>
         </div>
         <div class="col-md-6">
-            <h6><i class="bi bi-people"></i> 関係者情報</h6>
+            <h6>
+                <i class="bi bi-people"></i> 関係者情報
+            </h6>
             <table class="table table-sm">
                 <tr>
                     <th width="100">申請者:</th>
@@ -57,80 +56,88 @@
                     <td>{{ application.created_at|date:"Y年n月j日 H:i" }}</td>
                 </tr>
                 {% if application.approved_at %}
-                <tr>
-                    <th>承認日時:</th>
-                    <td>{{ application.approved_at|date:"Y年n月j日 H:i" }}</td>
-                </tr>
+                    <tr>
+                        <th>承認日時:</th>
+                        <td>{{ application.approved_at|date:"Y年n月j日 H:i" }}</td>
+                    </tr>
                 {% endif %}
             </table>
         </div>
     </div>
-
     {% if application.comment %}
-    <div class="mt-3">
-        <h6><i class="bi bi-chat-left-text"></i> 申請理由</h6>
-        <div class="border rounded p-3 bg-light">
-            {{ application.comment|linebreaks }}
+        <div class="mt-3">
+            <h6>
+                <i class="bi bi-chat-left-text"></i> 申請理由
+            </h6>
+            <div class="border rounded p-3 bg-light">{{ application.comment|linebreaks }}</div>
         </div>
-    </div>
     {% endif %}
-
     {% if application.approval_comment %}
-    <div class="mt-3">
-        <h6><i class="bi bi-chat-right-text"></i> 承認コメント</h6>
-        <div class="border rounded p-3 bg-light">
-            {{ application.approval_comment|linebreaks }}
+        <div class="mt-3">
+            <h6>
+                <i class="bi bi-chat-right-text"></i> 承認コメント
+            </h6>
+            <div class="border rounded p-3 bg-light">{{ application.approval_comment|linebreaks }}</div>
         </div>
-    </div>
     {% endif %}
-
     <!-- ファイルプレビュー（画像の場合） -->
     {% if application.content_type|slice:":5" == "image" %}
-    <div class="mt-3">
-        <h6><i class="bi bi-image"></i> プレビュー</h6>
-        <div class="text-center">
-            <img src="{{ application.file.url }}" class="img-fluid" style="max-height: 300px;">
+        <div class="mt-3">
+            <h6>
+                <i class="bi bi-image"></i> プレビュー
+            </h6>
+            <div class="text-center">
+                <img src="{{ application.file.url }}"
+                     class="img-fluid preview-image-limit"
+                     alt="申請ファイルのプレビュー画像"
+                     width="400"
+                     height="300">
+            </div>
         </div>
-    </div>
     {% endif %}
-
     <!-- 承認・却下フォーム -->
     {% if application.status == 'pending' and application.approver == user %}
-    <div class="mt-4">
-        <h6><i class="bi bi-check-circle"></i> 承認・却下</h6>
-        <form hx-post="{% url 'applications:update-application-status' %}" 
-              hx-vals='{"application_id": "{{ application.id }}"}'
-              hx-target="#modal-content"
-              hx-swap="outerHTML">
-            {% csrf_token %}
-            <div class="row">
-                <div class="col-md-6">
-                    <label class="form-label">ステータス</label>
-                    <select name="status" class="form-select" required>
-                        <option value="approved">承認</option>
-                        <option value="rejected">却下</option>
-                    </select>
+        <div class="mt-4">
+            <h6>
+                <i class="bi bi-check-circle"></i> 承認・却下
+            </h6>
+            <form hx-post="{% url 'applications:update-application-status' %}"
+                  hx-vals='{"application_id": "{{ application.id }}"}'
+                  hx-target="#modal-content"
+                  hx-swap="outerHTML">
+                {% csrf_token %}
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">ステータス</label>
+                        <select name="status" class="form-select" required>
+                            <option value="approved">承認</option>
+                            <option value="rejected">却下</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">コメント</label>
+                        <textarea name="comment"
+                                  class="form-control"
+                                  rows="3"
+                                  placeholder="承認・却下の理由（任意）"></textarea>
+                    </div>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">コメント</label>
-                    <textarea name="comment" class="form-control" rows="3" placeholder="承認・却下の理由（任意）"></textarea>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check"></i> 更新
+                    </button>
                 </div>
-            </div>
-            <div class="mt-3">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check"></i> 更新
-                </button>
-            </div>
-        </form>
-    </div>
+            </form>
+        </div>
     {% endif %}
 </div>
-
 <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
     {% if application.file %}
-    <a href="{{ application.file.url }}" target="_blank" class="btn btn-outline-primary">
-        <i class="bi bi-download"></i> ダウンロード
-    </a>
+        <a href="{{ application.file.url }}"
+           target="_blank"
+           class="btn btn-outline-primary">
+            <i class="bi bi-download"></i> ダウンロード
+        </a>
     {% endif %}
 </div>

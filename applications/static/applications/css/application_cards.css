@@ -1,0 +1,45 @@
+/* application_cards.css
+   インラインスタイル除去のため抽出したカード関連ユーティリティ */
+
+/* 共通: ドラッグ用カーソル */
+.application-card { cursor: grab; }
+.application-card:active { cursor: grabbing; }
+
+/* ヘッダー内フレックス配置 */
+.card-header.flex-header { display: flex !important; justify-content: flex-start !important; align-items: center !important; gap: 0.75rem; }
+
+/* 可変幅コンテナ */
+.card-flex-grow { flex-grow: 1; min-width: 0; }
+
+/* テキストトランケーション（既存Bootstrapの text-truncate は max-width 必須なので個別指定用） */
+.truncate-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ファイル名強調 */
+.filename-strong { font-size: 1.1em; }
+.filename-weight { font-weight: 500; }
+
+/* コメント小さめ */
+.small-text-90 { font-size: 0.9em; }
+.small-text-85 { font-size: 0.85em; }
+
+/* オーバーフロー隠しラッパー */
+.overflow-hidden { overflow: hidden; }
+
+/* 申請理由ボックス（approver view） */
+.reason-box { font-size: 0.9em; }
+
+/* 旧バックアップカード専用余白調整 (保持) */
+.compact-line { padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; }
+
+/* 画像プレビュー制限 */
+.preview-image-limit { max-height: 300px; }
+.filename-maxwidth { max-width: 200px; }
+
+/* Kanban ボード内カード高さ/展開挙動 (元: kanban board 各テンプレの inline style) */
+.application-card-sizing { transition: max-height .5s ease-in-out; max-height:180px; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; border:1px solid #ddd; border-radius:5px; margin-bottom:1rem; }
+.application-card-sizing.expanded { max-height:500px; }
+.application-card-sizing .card-content { flex-grow:1; overflow:hidden; }
+.application-card-sizing .expandable-content { display:none; }
+.application-card-sizing.expanded .expandable-content { display:block; }
+.application-card-sizing .card-footer { flex-shrink:0; cursor:pointer; background-color:#f8f9fa; }
+

@@ -1,97 +1,88 @@
 {% load humanize %}
-<div class="application-card" 
-     data-id="{{ application.id }}" 
-     data-status="{{ application.status }}"
-     style="cursor: grab;">
-    <div class="card-content" onclick="showApplicationDetail({{ application.id }})">
-        <div class="card-header" style="display: flex !important; justify-content: flex-start !important; align-items: center !important; gap: 0.75rem;">
+{% load static %}
+<div class="application-card application-card-sizing"
+     data-id="{{ application.id }}"
+     data-status="{{ application.status }}">
+    <div class="card-content"
+         onclick="showApplicationDetail({{ application.id }})">
+        <div class="card-header flex-header">
             <!-- 左側：申請ID -->
             <div>
                 <small class="text-muted">#{{ application.id }}</small>
             </div>
             <!-- 右側：情報を縦に並べる -->
-            <div style="flex-grow: 1; min-width: 0;">
+            <div class="card-flex-grow">
                 <!-- ステータス（申請者向けに大きく表示） -->
                 <div class="mb-2">
-                    <span class="badge fs-6 px-3 py-2
-                        {% if application.status == 'pending' %}bg-warning text-dark
-                        {% elif application.status == 'approved' %}bg-success
-                        {% elif application.status == 'rejected' %}bg-danger
-                        {% else %}bg-secondary{% endif %}">
-                        <i class="bi 
-                            {% if application.status == 'pending' %}bi-clock-history
-                            {% elif application.status == 'approved' %}bi-check-circle
-                            {% elif application.status == 'rejected' %}bi-x-circle
-                            {% else %}bi-circle{% endif %} me-1"></i>
+                    <span class="badge fs-6 px-3 py-2 {% if application.status == 'pending' %}bg-warning text-dark {% elif application.status == 'approved' %}bg-success {% elif application.status == 'rejected' %}bg-danger {% else %}bg-secondary{% endif %}">
+                        <i class="bi {% if application.status == 'pending' %}bi-clock-history {% elif application.status == 'approved' %}bi-check-circle {% elif application.status == 'rejected' %}bi-x-circle {% else %}bi-circle{% endif %} me-1"></i>
                         {{ application.get_status_display }}
                     </span>
                 </div>
                 <!-- ファイル名（申請者にとって重要な情報として強調） -->
-                <div class="mb-1" style="overflow: hidden;">
-                    <strong class="d-block text-primary" title="{{ application.original_filename }}" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1.1em;">
+                <div class="mb-1 overflow-hidden">
+                    <strong class="d-block text-primary truncate-ellipsis filename-strong"
+                            title="{{ application.original_filename }}">
                         <i class="bi bi-file-earmark-text me-1"></i>{{ application.original_filename }}
                     </strong>
                 </div>
                 <!-- 承認者 -->
-                <div class="mb-0" style="overflow: hidden;">
-                    {% comment %} <small class="text-muted d-block" style="white-space: nowrap;overflow: hidden;text-overflow: ellipsis;"> {% endcomment %}
-                        <i class="bi bi-person-check me-1"></i> 承認者: {{ application.approver }}
+                <div class="mb-0 overflow-hidden">
+                    {% comment %} かつて存在した truncate コメント表示用タグ削除 {% endcomment %}
+                    <i class="bi bi-person-check me-1"></i> 承認者: {{ application.approver }}
                     {% comment %} </small> {% endcomment %}
                 </div>
             </div>
         </div>
-        <div class="card-body">
-            <div class="card-text">
-                <!-- 申請日時を目立つように -->
-                <div class="mb-2 p-2 bg-light rounded">
-                    <i class="bi bi-calendar-event text-primary me-1"></i> 
-                    <strong>申請日:</strong> {{ application.created_at|naturaltime }}
-                    {% if application.file_size %}
-                    <br><i class="bi bi-file-bar-graph me-1"></i> 
-                    ファイルサイズ: {{ application.file_size|filesizeformat }}
+        <div class="expandable-content">
+            <div class="card-body">
+                <div class="card-text">
+                    <!-- 申請日時を目立つように -->
+                    <div class="mb-2 p-2 bg-light rounded">
+                        <i class="bi bi-calendar-event text-primary me-1"></i>
+                        <strong>申請日:</strong> {{ application.created_at|naturaltime }}
+                        {% if application.file_size %}
+                            <br>
+                            <i class="bi bi-file-bar-graph me-1"></i>
+                            ファイルサイズ: {{ application.file_size|filesizeformat }}
+                        {% endif %}
+                    </div>
+                    <!-- 申請者のコメント（自分のコメントなので強調） -->
+                    {% if application.comment %}
+                        <div class="mb-1">
+                            <i class="bi bi-chat-left-text text-info me-1"></i>
+                            <strong>申請理由:</strong>
+                            <br>
+                            {{ application.comment|truncatechars:60 }}
+                        </div>
                     {% endif %}
                 </div>
-                <!-- 申請者のコメント（自分のコメントなので強調） -->
-                {% if application.comment %}
-                <div class="mb-1">
-                    <i class="bi bi-chat-left-text text-info me-1"></i> 
-                    <strong>申請理由:</strong><br>
-                    {{ application.comment|truncatechars:60 }}
-                </div>
-                {% endif %}
-            </div>
-            <div class="expandable-content">
                 <!-- 承認者からのフィードバック（申請者にとって重要） -->
                 {% if application.approval_comment %}
-                <div class="card-text mt-2">
-                    <div class="alert 
-                        {% if application.status == 'approved' %}alert-success
-                        {% elif application.status == 'rejected' %}alert-danger
-                        {% else %}alert-info{% endif %} p-2 mb-0">
-                        <i class="bi 
-                            {% if application.status == 'approved' %}bi-check-circle-fill
-                            {% elif application.status == 'rejected' %}bi-x-circle-fill
-                            {% else %}bi-info-circle-fill{% endif %} me-1"></i>
-                        <strong>承認者からのコメント:</strong><br>
-                        <span style="font-size: 0.9em;">{{ application.approval_comment|truncatechars:120 }}</span>
+                    <div class="card-text mt-2">
+                        <div class="alert {% if application.status == 'approved' %}alert-success {% elif application.status == 'rejected' %}alert-danger {% else %}alert-info{% endif %} p-2 mb-0">
+                            <i class="bi {% if application.status == 'approved' %}bi-check-circle-fill {% elif application.status == 'rejected' %}bi-x-circle-fill {% else %}bi-info-circle-fill{% endif %} me-1"></i>
+                            <strong>承認者からのコメント:</strong>
+                            <br>
+                            <span class="small-text-90">{{ application.approval_comment|truncatechars:120 }}</span>
+                        </div>
                     </div>
-                </div>
                 {% endif %}
                 <!-- 次のアクション案内 -->
                 {% if application.status == 'pending' %}
-                <div class="card-text mt-2">
-                    <small class="text-info">
-                        <i class="bi bi-hourglass-split me-1"></i> 
-                        承認者による確認をお待ちください
-                    </small>
-                </div>
+                    <div class="card-text mt-2">
+                        <small class="text-info">
+                            <i class="bi bi-hourglass-split me-1"></i>
+                            承認者による確認をお待ちください
+                        </small>
+                    </div>
                 {% elif application.status == 'approved' %}
-                <div class="card-text mt-2">
-                    <small class="text-success">
-                        <i class="bi bi-download me-1"></i> 
-                        ファイルのダウンロードが可能です
-                    </small>
-                </div>
+                    <div class="card-text mt-2">
+                        <small class="text-success">
+                            <i class="bi bi-download me-1"></i>
+                            ファイルのダウンロードが可能です
+                        </small>
+                    </div>
                 {% endif %}
             </div>
         </div>

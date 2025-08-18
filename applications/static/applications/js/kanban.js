@@ -325,12 +325,6 @@ function showApplicationDetail(applicationId) {
     });
 }
 
-// 新規申請モーダルを表示
-function showNewApplicationModal() {
-    const modal = new bootstrap.Modal(document.getElementById('newApplicationModal'));
-    modal.show();
-}
-
 // カラムのカード数を更新
 function updateColumnCounts() {
     const statuses = ['pending', 'approved', 'rejected'];
@@ -421,28 +415,6 @@ function getOrCreateToastContainer() {
     return container;
 }
 
-// ===== 後方互換スタブ =====
-// 旧コードで利用されていた showApprovalNotification / showRejectionNotification
-// がテンプレートやキャッシュに残っていてもエラーにならないようトースト呼び出しへ委譲
-if (typeof window.showApprovalNotification === 'undefined') {
-    window.showApprovalNotification = function(application) {
-        if (!application) return;
-        showToast(`申請「${application.original_filename || ''}」が承認されました`, 'success');
-    };
-}
-if (typeof window.showRejectionNotification === 'undefined') {
-    window.showRejectionNotification = function(application) {
-        if (!application) return;
-        showToast(`申請「${application.original_filename || ''}」が却下されました`, 'warning');
-    };
-}
-if (typeof window.showNewApplicationNotification === 'undefined') {
-    window.showNewApplicationNotification = function(application) {
-        if (!application) return;
-        showToast(`新しい申請「${application.original_filename || ''}」が追加されました`, 'info');
-    };
-}
-
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', function() {
     // カード数の初期更新
@@ -452,24 +424,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // 定期的に更新をチェック（オプション）
     // setInterval(checkForUpdates, 30000); // 30秒ごと
-});
-
-// キーボードショートカット
-document.addEventListener('keydown', function(e) {
-    // Ctrl+N で新規申請モーダル
-    if (e.ctrlKey && e.key === 'n') {
-        e.preventDefault();
-        showNewApplicationModal();
-    }
-    
-    // Escキーでモーダルを閉じる
-    if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal.show');
-        modals.forEach(modal => {
-            const bsModal = bootstrap.Modal.getInstance(modal);
-            if (bsModal) bsModal.hide();
-        });
-    }
 });
 
 // ===== ロングポーリング (段階的移行) =====

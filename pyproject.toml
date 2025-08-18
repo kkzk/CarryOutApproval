@@ -76,6 +76,7 @@ dev-dependencies = [
     "isort>=5.10.0",
     "django-stubs>=5.0.0",
     "mypy>=1.10.0",
+    "djlint>=1.36.4",
 ]
 
 # Django固有の設定

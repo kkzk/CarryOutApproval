@@ -1,0 +1,19 @@
+/* application_forms.css
+   create_application.html 内の <style> 抽出 */
+
+.required::after { content: " *"; color: #dc3545; }
+
+/* カード外観調整（Bootstrap上書きは限定的に） */
+.create-app-card.card { border: none; border-radius: 10px; }
+.create-app-card > .card-header { border-radius: 10px 10px 0 0 !important; }
+
+.form-control, .form-select { border-radius: 8px; border: 1px solid #ddd; transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out; }
+.form-control:focus, .form-select:focus { border-color: #0d6efd; box-shadow: 0 0 0 0.2rem rgba(13,110,253,.25); }
+
+.btn { border-radius: 8px; }
+#submitBtn { position: relative; }
+#submitBtn:disabled { opacity: 0.7; }
+.spinner-border-sm { width: 1rem; height: 1rem; }
+
+/* 承認者ドロップダウン */
+#approverDropdown { max-height:260px; overflow:auto; position:absolute; width:100%; z-index:1050; display:none; }
