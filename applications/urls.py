@@ -16,15 +16,14 @@ urlpatterns = [
     path('list/', views.application_list, name='application-list'),
     path('admin/list/', views.admin_application_list, name='admin-application-list'),
     path('my/', views.my_applications_list, name='my-applications-list'),
-    path('pending/', views.pending_approvals, name='pending-approvals'),
     path('approval/', views.approval_list, name='approval-list'),
+    path('approval/pending/', views.approval_list, {'status': 'pending'}, name='pending-approvals'),
     path('approval/history/', views.my_approval_history, name='my-approval-history'),
     path('mark-file-reviewed/', views.mark_file_reviewed, name='mark-file-reviewed'),
     
     # API endpoints
     path('api/', include(router.urls)),
     path('api/my/', views.MyApplicationListView.as_view(), name='api-my-applications'),
-    path('api/pending/', views.PendingApplicationListView.as_view(), name='api-pending-applications'),
     
     # デフォルト表示（最後に配置）
     path('', views.default_view, name='default-view'),

@@ -17,10 +17,6 @@
                         <small class="text-muted fs-6">（承認者として）</small>
                     </h2>
                     <div>
-                        <a href="{% url 'applications:pending-approvals' %}" 
-                           class="btn btn-warning">
-                            <i class="fas fa-clock me-2"></i>承認待ち
-                        </a>
                         <a href="{% url 'applications:create-application' %}" 
                            class="btn btn-success">
                             <i class="fas fa-plus me-2"></i>新しい申請
@@ -31,7 +27,7 @@
                 <div class="card mb-4">
                     <div class="card-body">
                         <form method="get" class="row g-3" id="searchForm">
-                            <div class="col-md-8">
+                            <div class="col-md-6">
                                 <label for="searchInput" class="form-label">検索</label>
                                 <input type="text" 
                                        class="form-control" 
@@ -40,6 +36,18 @@
                                        value="{{ search_query|default:'' }}" 
                                        placeholder="申請者名、ファイル名、コメントで検索..."
                                        autocomplete="off">
+                            </div>
+                            <div class="col-md-2">
+                                <label for="statusFilter" class="form-label">状態</label>
+                                <select class="form-select" id="statusFilter" name="status">
+                                    <option value="">全て</option>
+                                    {% for value, label in approval_status_choices %}
+                                        <option value="{{ value }}" 
+                                                {% if status_filter == value %}selected{% endif %}>
+                                            {{ label }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
                             </div>
                             <div class="col-md-2 d-flex align-items-end">
                                 <button type="submit" 

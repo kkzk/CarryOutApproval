@@ -286,8 +286,8 @@
                         <h5>承認者として</h5>
                         <ul class="sidebar-nav">
                             <li>
-                                <a href="{% url 'applications:pending-approvals' %}"
-                                   {% if request.resolver_match.url_name == 'pending-approvals' %}class="active"{% endif %}>
+                                <a href="{% url 'applications:approval-list' %}?status=pending"
+                                   {% if request.resolver_match.url_name == 'pending-approvals' or request.GET.status == 'pending' %}class="active"{% endif %}>
                                     <i class="bi bi-clock-history"></i>
                                     承認待ち申請
                                 </a>
