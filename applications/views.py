@@ -92,18 +92,6 @@ class MyApplicationListView(generics.ListAPIView):
         return Application.objects.filter(applicant=self.request.user.username)
 
 
-class PendingApplicationListView(generics.ListAPIView):
-    """承認待ち申請一覧"""
-    serializer_class = ApplicationSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        return Application.objects.filter(
-            approver=self.request.user.username,
-            status=ApprovalStatus.PENDING
-        )
-
-
 # Django Template Views (新規追加)
 
 @login_required
@@ -355,52 +343,7 @@ def my_applications_list(request):
 
 
 @login_required
-def pending_approvals(request):
-    """承認待ち申請一覧（承認者として）"""
-    from django.db.models import Q
-    from .forms import ApplicationFilterForm
-    
-    # 基本クエリ
-    applications = Application.objects.filter(
-        approver=request.user.username,
-        status=ApprovalStatus.PENDING,
-    )
-    
-    # 検索フォームの処理
-    filter_form = ApplicationFilterForm(request.GET)
-    search_query = request.GET.get('search', '').strip()
-    
-    if search_query:
-        # 検索条件を適用
-        applications = applications.filter(
-            Q(applicant__icontains=search_query) |
-            Q(approver__icontains=search_query) |
-            Q(comment__icontains=search_query) |
-            Q(files__original_filename__icontains=search_query)
-        ).distinct()
-    
-    # 並び順
-    applications = applications.order_by('-created_at')
-    
-    # ページネーション
-    from django.core.paginator import Paginator
-    paginator = Paginator(applications, 20)
-    page_number = request.GET.get('page')
-    applications = paginator.get_page(page_number)
-    
-    context = {
-        'applications': applications,
-        'filter_form': filter_form,
-        'search_query': search_query,
-        'title': '承認待ち申請',
-        'is_approval_view': True,
-    }
-    
-    return render(request, 'applications/approval_list.html', context)
-
-
-@login_required
-def approval_list(request):
+def approval_list(request, status=None):
     """承認管理一覧（承認者として）"""
     from django.db.models import Q
     from .forms import ApplicationFilterForm
@@ -408,6 +351,11 @@ def approval_list(request):
     # 基本クエリ
     applications = Application.objects.filter(approver=request.user.username)
     
+    # 状態フィルター（URLパラメータまたはGETパラメータ）
+    status_filter = status or request.GET.get('status', '').strip()
+    if status_filter:
+        applications = applications.filter(status=status_filter)
+    
     # 検索フォームの処理
     filter_form = ApplicationFilterForm(request.GET)
     search_query = request.GET.get('search', '').strip()
@@ -430,11 +378,19 @@ def approval_list(request):
     page_number = request.GET.get('page')
     applications = paginator.get_page(page_number)
     
+    # タイトルを状態に応じて変更
+    if status_filter == ApprovalStatus.PENDING:
+        title = '承認待ち申請'
+    else:
+        title = '承認管理一覧'
+    
     context = {
         'applications': applications,
         'filter_form': filter_form,
         'search_query': search_query,
-        'title': '承認管理一覧',
+        'status_filter': status_filter,
+        'approval_status_choices': ApprovalStatus.choices,
+        'title': title,
         'is_approval_view': True,
     }
     
