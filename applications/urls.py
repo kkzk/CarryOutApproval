@@ -13,7 +13,6 @@ urlpatterns = [
     path('<int:application_id>/file/<int:file_id>/open/', views.open_file, name='open-file'),
     path('<int:application_id>/file/open/', views.open_file, name='open-file-legacy'),
     path('create/', views.create_application, name='create-application'),
-    path('list/', views.application_list, name='application-list'),
     path('admin/list/', views.admin_application_list, name='admin-application-list'),
     path('my/', views.my_applications_list, name='my-applications-list'),
     path('approval/', views.approval_list, name='approval-list'),

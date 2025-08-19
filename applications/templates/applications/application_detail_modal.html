@@ -93,6 +93,18 @@
                         <td>{{ application.approved_at|date:"Y年n月j日 H:i" }}</td>
                     </tr>
                 {% endif %}
+                <tr>
+                    <th>持出先所属:</th>
+                    <td>
+                        {% if application.carry_out_destinations.exists %}
+                            {% for destination in application.carry_out_destinations.all %}
+                                <span class="badge bg-info text-dark me-1">{{ destination.name }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-muted">未指定</span>
+                        {% endif %}
+                    </td>
+                </tr>
             </table>
         </div>
     </div>

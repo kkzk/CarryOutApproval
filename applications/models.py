@@ -98,6 +98,12 @@ class Application(models.Model):
         blank=True,
         verbose_name="申請コメント"
     )
+    carry_out_destinations = models.ManyToManyField(
+        'users.Department',
+        blank=True,
+        verbose_name="持出先所属",
+        limit_choices_to={'is_active': True}
+    )
     approval_comment = models.TextField(
         blank=True,
         verbose_name="承認コメント"

@@ -116,6 +116,21 @@
                                         {% endif %}
                                         <div class="form-text">申請理由や詳細な説明を記入してください。</div>
                                     </div>
+                                    <!-- 持出先所属 -->
+                                    <div class="mb-4">
+                                        <label class="form-label">
+                                            <i class="fas fa-building me-1"></i>{{ form.carry_out_destinations.label }}
+                                        </label>
+                                        {{ form.carry_out_destinations }}
+                                        {% if form.carry_out_destinations.help_text %}
+                                            <div class="form-text">{{ form.carry_out_destinations.help_text }}</div>
+                                        {% endif %}
+                                        {% if form.carry_out_destinations.errors %}
+                                            <div class="invalid-feedback d-block">
+                                                {% for error in form.carry_out_destinations.errors %}{{ error }}{% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    </div>
                                     <!-- 送信ボタン -->
                                     <div class="d-grid gap-2">
                                         <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">

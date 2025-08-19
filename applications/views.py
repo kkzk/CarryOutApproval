@@ -4,20 +4,18 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.contrib import messages
-from django.db import transaction  # left for potential future batch ops (state_machine handles its own)
+from django.db import transaction
 from django.db import models
-from django.template.loader import render_to_string
-from django.utils import timezone  # may be used elsewhere; retained
 import os
 from .models import Application, ApprovalStatus, ApplicationFile
 from .serializers import ApplicationSerializer, ApplicationCreateSerializer, ApplicationStatusUpdateSerializer
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
 from . import state_machine
-from .state_machine import broadcast_application_state  # no-op 拡張ポイント
+from .state_machine import broadcast_application_state
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
@@ -146,13 +144,22 @@ def create_application(request):
                             content_type=getattr(file, 'content_type', 'application/octet-stream')
                         )
                     
+                    # 持出先所属の保存（多対多関係のため、フォーム保存後に設定）
+                    if form.cleaned_data.get('carry_out_destinations'):
+                        application.carry_out_destinations.set(form.cleaned_data['carry_out_destinations'])
+                    
                     # 監査ログを記録
                     file_names = [f.name for f in files] if files else []
+                    destinations = [dest.name for dest in application.carry_out_destinations.all()]
+                    details = f"申請を作成しました。ファイル数: {len(file_names)}, ファイル: {', '.join(file_names)}"
+                    if destinations:
+                        details += f", 持出先所属: {', '.join(destinations)}"
+                    
                     AuditLog.objects.create(
                         user=request.user,
                         application=application,
                         action="create",
-                        details=f"申請を作成しました。ファイル数: {len(file_names)}, ファイル: {', '.join(file_names)}"
+                        details=details
                     )
                     
                     # 通知は post_save シグナルで処理（ここでは重複送信しない）
@@ -187,45 +194,6 @@ def create_application(request):
         'title': '新規申請作成',
         'approver_candidates': safe_candidates
     })
-
-
-@login_required
-def application_list(request):
-    """申請一覧ページ（テーブル表示） - 一般ユーザー用"""
-    # フィルタフォーム
-    filter_form = ApplicationFilterForm(request.GET, user=request.user)
-    
-    # ベースクエリセット - 自分の申請と自分が承認者の申請のみ
-    queryset = Application.objects.filter(
-        models.Q(applicant=request.user.username) | models.Q(approver=request.user.username)
-    ).distinct().order_by('-created_at')
-    
-    # フィルタ適用
-    if filter_form.is_valid():
-        if filter_form.cleaned_data.get('status'):
-            queryset = queryset.filter(status=filter_form.cleaned_data['status'])
-        if filter_form.cleaned_data.get('applicant'):
-            queryset = queryset.filter(applicant=filter_form.cleaned_data['applicant'])
-        if filter_form.cleaned_data.get('approver'):
-            queryset = queryset.filter(approver=filter_form.cleaned_data['approver'])
-    
-    # 承認者としての表示かどうかを判定
-    is_approval_view = queryset.filter(approver=request.user.username).exists()
-    
-    # ページネーション
-    from django.core.paginator import Paginator
-    paginator = Paginator(queryset, 20)  # 1ページあたり20件
-    page_number = request.GET.get('page')
-    applications = paginator.get_page(page_number)
-    
-    context = {
-        'applications': applications,
-        'filter_form': filter_form,
-        'title': '関連申請一覧',
-        'is_approval_view': is_approval_view,
-    }
-    
-    return render(request, 'applications/application_list.html', context)
 
 
 @login_required
@@ -275,29 +243,6 @@ def admin_application_list(request):
     }
     
     return render(request, 'applications/admin_application_list.html', context)
-
-
-@login_required
-def my_applications(request):
-    """自分の申請一覧"""
-    applications = (
-        Application.objects
-        .filter(applicant=request.user.username)
-        .order_by('-created_at')
-    )
-    
-    # ページネーション
-    from django.core.paginator import Paginator
-    paginator = Paginator(applications, 20)
-    page_number = request.GET.get('page')
-    applications = paginator.get_page(page_number)
-    
-    context = {
-        'applications': applications,
-        'title': '自分の申請一覧'
-    }
-    
-    return render(request, 'applications/my_applications.html', context)
 
 
 @login_required

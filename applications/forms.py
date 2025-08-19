@@ -1,6 +1,9 @@
 from django import forms
 from django.forms.widgets import FileInput
 from .models import Application, ApprovalStatus, ApplicationFile
+from users.models import Department
+from .widgets import SearchableModelMultipleChoiceField
+
 
 class MultipleFileInput(FileInput):
     """複数ファイル選択対応のウィジェット"""
@@ -75,10 +78,16 @@ class ApplicationCreateForm(forms.ModelForm):
         label="申請コメント",
         required=False
     )
+    carry_out_destinations = SearchableModelMultipleChoiceField(
+        queryset=Department.objects.filter(is_active=True),
+        label="持出先所属",
+        required=False,
+        help_text="検索で絞り込んで複数選択できます"
+    )
     
     class Meta:
         model = Application
-        fields = ['approver', 'comment']
+        fields = ['approver', 'comment', 'carry_out_destinations']
     
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
