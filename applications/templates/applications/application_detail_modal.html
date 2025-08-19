@@ -1,4 +1,5 @@
 {% load humanize %}
+{% load application_extras %}
 <div class="modal-header">
     <h5 class="modal-title">
         <i class="bi bi-file-earmark-text"></i> 申請詳細 #{{ application.id }}
@@ -95,6 +96,81 @@
             </table>
         </div>
     </div>
+    
+    <!-- ファイル確認セクション（承認者向け） -->
+    {% if application.approver == user.username %}
+        <div class="mt-3">
+            <h6>
+                <i class="bi bi-eye-fill"></i> ファイル確認
+            </h6>
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 
+                承認するには、すべてのファイルを確認する必要があります。ファイル名をクリックしてファイルを開いてください。
+            </div>
+            {% if application.files.exists %}
+                <div class="list-group">
+                    {% for file in application.files.all %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <button class="btn btn-link p-0 text-start"
+                                        onclick="openAndMarkFile({{ application.id }}, {{ file.id }}, '{{ file.original_filename }}')">
+                                    <i class="fas fa-external-link-alt me-2"></i>{{ file.original_filename }}
+                                </button>
+                                <br>
+                                <small class="text-muted">{{ file.file_size|filesizeformat }} - {{ file.content_type }}</small>
+                            </div>
+                            <div>
+                                {% if file|is_file_reviewed_by:user.username %}
+                                    <span class="badge bg-success">
+                                        <i class="fas fa-check"></i> 確認済み
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-warning">
+                                        <i class="fas fa-clock"></i> 未確認
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% elif application.file %}
+                <div class="list-group">
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <button class="btn btn-link p-0 text-start"
+                                    onclick="openAndMarkFile({{ application.id }}, null, '{{ application.original_filename }}')">
+                                <i class="fas fa-external-link-alt me-2"></i>{{ application.original_filename }}
+                            </button>
+                            <br>
+                            <small class="text-muted">{{ application.file_size|filesizeformat }} - {{ application.content_type }}</small>
+                        </div>
+                        <div>
+                            {% if application|is_legacy_file_reviewed_by:user.username %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check"></i> 確認済み
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="fas fa-clock"></i> 未確認
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+            
+            {% if application|all_files_reviewed_by:user.username %}
+                <div class="alert alert-success mt-3">
+                    <i class="fas fa-check-circle"></i> すべてのファイルを確認済みです。承認または却下を選択できます。
+                </div>
+            {% else %}
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-exclamation-triangle"></i> まだ確認していないファイルがあります。
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+    
     {% if application.comment %}
         <div class="mt-3">
             <h6>
@@ -111,31 +187,14 @@
             <div class="border rounded p-3 bg-light">{{ application.approval_comment|linebreaks }}</div>
         </div>
     {% endif %}
-    <!-- ファイルプレビュー（画像の場合） -->
-    {% if application.content_type|slice:":5" == "image" %}
-        <div class="mt-3">
-            <h6>
-                <i class="bi bi-image"></i> プレビュー
-            </h6>
-            <div class="text-center">
-                <img src="{{ application.file.url }}"
-                     class="img-fluid preview-image-limit"
-                     alt="申請ファイルのプレビュー画像"
-                     width="400"
-                     height="300">
-            </div>
-        </div>
-    {% endif %}
+
     <!-- 承認・却下フォーム -->
-    {% if application.status == 'pending' and application.approver == user %}
+    {% if application.status == 'pending' and application.approver == user.username %}
         <div class="mt-4">
             <h6>
                 <i class="bi bi-check-circle"></i> 承認・却下
             </h6>
-            <form hx-post="{% url 'applications:update-application-status' %}"
-                  hx-vals='{"application_id": "{{ application.id }}"}'
-                  hx-target="#modal-content"
-                  hx-swap="outerHTML">
+            <form method="post" action="{% url 'applications:application-detail-modal' pk=application.id %}">
                 {% csrf_token %}
                 <div class="row">
                     <div class="col-md-6">
@@ -164,39 +223,53 @@
 </div>
 <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">閉じる</button>
-    {% if application.files.exists or application.file %}
-        {% if application.files.exists and application.file_count == 1 %}
-            <a href="{{ application.files.first.file.url }}"
-               target="_blank"
-               class="btn btn-outline-primary">
-                <i class="bi bi-download"></i> ダウンロード
-            </a>
-        {% elif application.files.exists and application.file_count > 1 %}
-            <div class="btn-group">
-                <button type="button" 
-                        class="btn btn-outline-primary dropdown-toggle" 
-                        data-bs-toggle="dropdown" 
-                        aria-expanded="false">
-                    <i class="bi bi-download"></i> ダウンロード
-                </button>
-                <ul class="dropdown-menu">
-                    {% for file in application.files.all %}
-                        <li>
-                            <a class="dropdown-item" 
-                               href="{{ file.file.url }}" 
-                               target="_blank">
-                                <i class="fas fa-file me-2"></i>{{ file.original_filename }}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        {% elif application.file %}
-            <a href="{{ application.file.url }}"
-               target="_blank"
-               class="btn btn-outline-primary">
-                <i class="bi bi-download"></i> ダウンロード
-            </a>
-        {% endif %}
-    {% endif %}
 </div>
+
+<script>
+function openAndMarkFile(applicationId, fileId, filename) {
+    // ファイルを開く
+    let url;
+    if (fileId) {
+        url = `{% url "applications:open-file" application_id=0 file_id=1 %}`.replace('0', applicationId).replace('1', fileId);
+    } else {
+        url = `{% url "applications:open-file-legacy" application_id=0 %}`.replace('0', applicationId);
+    }
+    
+    // ファイルをダウンロード
+    window.open(url, '_blank');
+    
+    // ファイル確認済みとしてマーク
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
+                     document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    const formData = new FormData();
+    formData.append('application_id', applicationId);
+    if (fileId) {
+        formData.append('file_id', fileId);
+    }
+    formData.append('csrfmiddlewaretoken', csrfToken);
+    
+    fetch('{% url "applications:mark-file-reviewed" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // モーダルを再読み込みして確認状況を更新
+            setTimeout(() => {
+                loadApplicationDetail({{ application.id }});
+            }, 1000);
+        } else {
+            console.error('ファイル確認のマークに失敗:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+    });
+}
+</script>

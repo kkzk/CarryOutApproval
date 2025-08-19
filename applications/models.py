@@ -159,6 +159,63 @@ class Application(models.Model):
         if self.file:
             return 1
         return self.files.count()
+    
+    def get_all_files_reviewed_by(self, approver_username):
+        """指定した承認者がすべてのファイルを確認済みかチェック"""
+        all_files = self.files.all()
+        if not all_files.exists():
+            # 旧形式のファイルのみの場合
+            if self.file:
+                return self.file_reviews.filter(
+                    approver=approver_username,
+                    file__isnull=True
+                ).exists()
+            return False
+        
+        reviewed_files = self.file_reviews.filter(
+            approver=approver_username,
+            file__in=all_files
+        ).count()
+        
+        return reviewed_files == all_files.count()
+    
+    def get_reviewed_files_by(self, approver_username):
+        """指定した承認者が確認済みのファイル一覧を取得"""
+        return self.file_reviews.filter(
+            approver=approver_username
+        ).values_list('file__original_filename', flat=True)
+
+
+class FileReviewStatus(models.Model):
+    """ファイル確認状況モデル"""
+    application = models.ForeignKey(
+        'Application',
+        on_delete=models.CASCADE,
+        related_name='file_reviews',
+        verbose_name="申請"
+    )
+    file = models.ForeignKey(
+        'ApplicationFile',
+        on_delete=models.CASCADE,
+        verbose_name="ファイル"
+    )
+    approver = models.CharField(
+        max_length=150,
+        verbose_name="承認者ユーザ名"
+    )
+    reviewed_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="確認日時"
+    )
+    
+    class Meta:
+        verbose_name = "ファイル確認状況"
+        verbose_name_plural = "ファイル確認状況"
+        unique_together = ['application', 'file', 'approver']
+        ordering = ['-reviewed_at']
+    
+    def __str__(self):
+        return f"{self.approver}が{self.file.original_filename}を確認"
 
 
 """以前は post_save シグナルで通知処理を行っていたが、

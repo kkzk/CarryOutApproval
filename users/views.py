@@ -60,7 +60,7 @@ class LoginView(View):
     """ログイン画面とログイン処理"""
     def get(self, request):
         if request.user.is_authenticated:
-            return redirect('applications:kanban-board')
+            return redirect('applications:default-view')
         context = build_login_feedback(request)
         return render(request, 'users/login.html', context)
 
@@ -72,7 +72,7 @@ class LoginView(View):
             user = authenticate(request, username=username, password=password)
             if user is not None and user.is_active:
                 login(request, user)
-                next_url = request.GET.get('next', 'applications:kanban-board')
+                next_url = request.GET.get('next', 'applications:default-view')
                 return redirect(next_url)
             else:
                 if hasattr(request, 'auth_error_messages') and request.auth_error_messages:

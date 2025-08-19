@@ -24,7 +24,7 @@ from django.shortcuts import render
 def root_redirect(request):
     """ルートURLから適切なページにリダイレクト"""
     if request.user.is_authenticated:
-        return redirect('applications:kanban-board')
+        return redirect('applications:default-view')
     else:
         return redirect('users:login')
 
