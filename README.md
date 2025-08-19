@@ -1,5 +1,7 @@
 このプロジェクトは開発・学習用のサンプルアプリケーションです。
 
+GitHub Copilot によりソースコードとドキュメントを生成しています。
+
 # ファイル持出承認システム
 
 ファイルを外部に持ち出す前に上司の承認を受けるワークフローを想定したWebアプリケーションです。
@@ -9,13 +11,13 @@
 
 ### 主な機能
 - **申請者**: ドラッグ&ドロップでファイルをアップロードし、承認者を指定して持出申請を作成
-- **承認者**: カンバンボードでドラッグ&ドロップによる直感的な承認・拒否操作
+- **承認者**: 一覧表示での申請確認と承認・拒否操作
 - **管理者**: Django管理画面での全申請管理、監査ログ確認、証跡管理
 
 ### 特徴
-- **リアルタイム通知**: Long Polling (差分取得API) によるシンプル・堅牢なリアルタイム更新
-- **カンバンボード**: 申請状況を視覚的に管理（承認待ち・承認済み・拒否）
-- **リアルタイム更新**: ページリロード不要のAjax通信とWebSocket連携
+- **直感的なUI**: HTMXによるSPAライクな操作性とページリロード不要の更新
+- **申請管理**: 申請者・承認者別の一覧表示と詳細検索機能
+- **ファイル管理**: 複数ファイルアップロード対応と確認済み状況の追跡
 - **監査ログ**: 全ての操作を記録し、証跡管理を実現
 
 ## 技術スタック
@@ -26,13 +28,13 @@
 - **Django Templates** - サーバーサイドレンダリングエンジン
 - **HTMX 1.8.4** - モダンなAjax通信ライブラリ（SPAライクな操作感を実現）
 - **Bootstrap 5.1.3** - レスポンシブUIフレームワーク
-- **Sortable.js** - ドラッグ&ドロップ機能ライブラリ
 - **SQLite** (開発用) / **PostgreSQL** (本番推奨)
 - **Pillow 11.3.0** - 画像・ファイル処理ライブラリ
 - **python-decouple 3.8** - 設定管理ライブラリ
 
-### リアルタイム通信・通知システム
-- **Long Polling (差分取得API)** - WebSocket/Redis/RQ 不要の軽量リアルタイム更新
+### 認証・LDAP統合
+- **Django-python3-ldap** - Active Directory / LDAP認証対応
+- **カスタム認証バックエンド** - 複数認証形式対応 (DOMAIN\\user / user@UPN)
 
 ## 主要機能
 
@@ -41,123 +43,34 @@
 - **承認者検索・選択**: リアルタイム検索による承認者選択
 - **持出理由入力**: 詳細な理由とコメントの記録
 - **申請履歴管理**: 自分の申請一覧表示と進捗確認
-- **カンバンボード**: 視覚的な申請状況管理
 
 ### 承認機能
-- **ドラッグ&ドロップ承認**: カンバンボードでの直感的な状況変更
+- **申請一覧管理**: 承認待ち・承認済み・履歴の分類表示
+- **詳細検索**: 申請者、承認者、ファイル名、コメントによる絞り込み
 - **申請詳細確認**: モーダルウィンドウでの詳細情報表示
 - **ファイルプレビュー**: アップロードされたファイルの確認
 - **承認・拒否理由入力**: 詳細なコメント記録
+- **ファイル確認状況追跡**: 各ファイルの確認済み状況を管理
 
 ### 管理・監査機能
 - **Django管理画面**: 管理者向けの包括的な管理インターフェース
 - **監査ログシステム**: 全操作の自動記録と追跡
 - **証跡管理**: 申請から承認までの完全な履歴
-- **ユーザー管理**: 組織階層に基づくユーザー管理
+- **ユーザー管理**: LDAP統合による組織階層ベースのユーザー管理
 
 ### ユーザーエクスペリエンス
-- **リアルタイム通知**: 申請イベントをRQキューへ投入し、ワーカー経由でWebSocketへ配信 (UIスレッド負荷を低減)
-- **リアルタイム更新**: ページリロード不要のスムーズな操作
+- **レスポンシブデザイン**: Bootstrap 5によるモバイル・デスクトップ対応
+- **HTMXによる高速更新**: ページリロード不要のスムーズな操作
 - **プログレッシブ・エンハンスメント**: JavaScript無効環境でも基本機能利用可能
 
 ## セットアップ方法
 
+## セットアップ方法
+
 ### 必要な環境
-
-### Windows環境での前提条件
-
-
-## WebSocket イベント仕様 (通知リファクタ後)
-
-カンバン更新は永続通知を介さず直接 WebSocket でイベントを受信します。
-
-イベント種別 (payload.type は常に `kanban_update`) はアクションを統一し、`action: application_state` のみを使用します。
-サーバ側で従来の個別イベント (new_application / application_approved / application_rejected) を現在のステータス情報へ正規化し `application_state` として配信します。
-
-共通ペイロード structure:
-```
-{
-   "type": "kanban_update",
-   "action": "<上記アクション>",
-   "application": {  // ApplicationSerializer 出力
-       "id": ..., "status": ..., ...
-   }
-}
-```
-
-補足:
-- クライアントは受信した `application.status` (pending / approved / rejected) と DOM 上の現在位置の差分でカード追加/移動とトースト表示を行います。
-- 重複抑止は (application.id, status) の短期キャッシュで行い冪等性を確保しています。
-- 永続通知 (Notification モデル) は削除済み。旧 API は利用不可。
-#### WSL (Ubuntu) 上での Redis セットアップ手順 (deprecated)
-Long Polling 移行に伴い本アプリは Redis / RQ / Channels を標準では使用しません。以下は旧リアルタイム push 実装の参考資料として残しています (再導入時の手順アーカイブ)。
-Windows ネイティブ版 Redis は公式提供が無いため、開発では WSL2 上の Ubuntu に Redis を導入し Windows 側 (Django / RQ ワーカー) から `localhost:6379` で利用する構成が簡便です。
-   ```
-2. Ubuntu で Redis をインストール
-   ```bash
-   sudo apt update
-   sudo apt install -y redis-server
-   ```
-3. 設定を最小調整 (systemd 監視 & 永続化任意)
-   ```bash
-   sudo sed -i 's/^#* *supervised .*/supervised systemd/' /etc/redis/redis.conf
-   # (任意) AOF 永続化を有効化
-   sudo sed -i 's/^#* *appendonly .*/appendonly yes/' /etc/redis/redis.conf
-   ```
-   パスワードを付けたい場合は `/etc/redis/redis.conf` に行を追加:
-   ```
-   requirepass YourStrongPasswordHere
-   ```
-4. 起動/自動起動設定
-   ```bash
-   sudo systemctl enable --now redis-server
-   systemctl status redis-server --no-pager
-   ```
-5. 動作確認 (WSL 内)
-   ```bash
-   redis-cli ping   # → PONG
-   ```
-6. Windows から疎通確認 (PowerShell)
-   ```powershell
-   wsl -d Ubuntu redis-cli ping
-   ```
-   WSL2 で Redis が `127.0.0.1` にバインドされていれば Windows ホストからも `localhost:6379` でアクセス可能です。`/etc/redis/redis.conf` の `bind` をデフォルト (127.0.0.1) のままにし、`protected-mode yes` を維持してください。
-7. `.env` (または環境変数) 設定例
-   ```env
-   REDIS_URL=redis://localhost:6379/0
-   # パスワードを付与した場合
-   # REDIS_URL=redis://:YourStrongPasswordHere@localhost:6379/0
-   ```
-8. RQ ワーカー起動 (別 PowerShell ターミナル複数)
-   ```powershell
-   uv run python manage.py rqworker notifications
-   uv run python manage.py rqworker default
-   ```
-   通知専用キューだけ使う場合は `notifications` ワーカーだけでも可。負荷次第で `--worker-class` や 並列ターミナルを増やします。
-   
-   Windows で `AttributeError: module 'os' has no attribute 'fork'` が出る場合:
-   デフォルトワーカークラスは `os.fork()` を使うため Windows では失敗します。`SimpleWorker` を指定してフォーク無しで実行してください。
-   ```powershell
-   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker notifications
-   uv run python manage.py rqworker --worker-class rq.worker.SimpleWorker default
-   ```
-   あるいは WSL2(Ubuntu) 内で通常のワーカークラスを実行することも可能です。
-9. テスト: 申請作成/承認操作で通知が Redis 経由で配送されるかブラウザ (WebSocket) で確認。
-
-トラブルシュート:
-| 症状 | 確認コマンド | 対処 |
-|------|--------------|------|
-| 接続拒否 | `redis-cli ping` | サービス起動状態 `systemctl status redis-server` |
-| 認証失敗 | `(error) NOAUTH` | `requirepass` 設定と REDIS_URL のパスワード一致 |
-| 遅延/詰まり | `redis-cli info stats` | キュー長監視 `redis-cli llen rq:queue:notifications` |
-| メモリ不足 | `redis-cli info memory` | maxmemory 設定/不要キー削除 |
-
-Docker 代替 (WSL に Docker Desktop がある場合):
-```powershell
-docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
-```
-同様に `REDIS_URL=redis://localhost:6379/0` を使用します。
-
+- Python 3.11+
+- uv (Python パッケージマネージャー)
+- Windows PowerShell または Command Prompt
 
 ### 簡単セットアップ・起動（Windows PowerShell）
 
@@ -165,11 +78,8 @@ docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
 # 初回セットアップ
 .\setup-django.ps1
 
-# 開発サーバー起動（通常のDjangoサーバー）
+# 開発サーバー起動
 .\start-django.ps1
-
-# (Archive) 旧 WebSocket対応ASGIサーバー起動（Daphne） Long Polling 現行構成では不要
-# .\start-daphne.ps1
 ```
 
 ### 手動セットアップ
@@ -177,9 +87,6 @@ docker run -d --name redis-dev -p 6379:6379 redis:7-alpine
 ```powershell
 # uvプロジェクト管理を使用（推奨）
 uv sync
-
-# Djangoディレクトリに移動
-cd django
 
 # データベースマイグレーション
 uv run python manage.py migrate
@@ -192,9 +99,6 @@ uv run python manage.py collectstatic --noinput
 
 # サーバー起動
 uv run python manage.py runserver 8000
-
-# (Archive) 旧 WebSocket対応ASGIサーバー起動 (Long Polling では不要)
-# uv run python -m daphne -p 8000 carry_out_approval.asgi:application
 ```
 
 ### LDAP認証環境のセットアップ
@@ -361,13 +265,10 @@ DN をハードコードせず `sAMAccountName` 検索で取得するため OU �
 
 ## アクセス方法
 
-- **カンバンボード**: http://localhost:8000
+- **申請一覧・管理**: http://localhost:8000
 - **Django管理画面**: http://localhost:8000/admin
-- **WebSocket接続テスト**: http://localhost:8000/websocket-test
 - **REST API**: http://localhost:8000/api
 - **API ドキュメント**: http://localhost:8000/api/ (DRFブラウザ表示)
-
-**注意**: リアルタイム通知機能を使用するには、Daphne（ASGIサーバー）での起動が必要です。
 
 ## テストユーザー
 
@@ -408,9 +309,8 @@ CarryOutApproval/
 │   │   ├── urls.py          # URLルーティング
 │   │   ├── templates/       # HTMLテンプレート
 │   │   │   └── applications/
-│   │   │       ├── kanban_board.html
-│   │   │       ├── application_card.html
-│   │   │       └── application_detail_modal.html
+│   │   │       ├── approval_list.html      # 承認者用一覧画面
+│   │   │       └── application_list.html   # 申請者用一覧画面
 │   │   └── static/          # 静的ファイル
 │   │       └── applications/
 │   │           ├── css/
@@ -428,16 +328,13 @@ CarryOutApproval/
 │   │   ├── models.py        # 監査ログモデル
 │   │   ├── views.py         # 監査ログAPI
 │   │   └── admin.py         # 監査ログ管理画面
-│   ├── notifications/       # リアルタイム通知アプリ
+│   ├── notifications/       # 通知システム（Long Polling）
 │   │   ├── models.py        # 通知モデル
 │   │   ├── views.py         # 通知API
-│   │   ├── consumers.py     # WebSocketコンシューマー
-│   │   ├── routing.py       # WebSocketルーティング
 │   │   ├── services.py      # 通知サービス
 │   │   └── serializers.py   # 通知シリアライザー
 │   ├── templates/           # 共通テンプレート
-│   │   ├── base.html        # ベーステンプレート
-│   │   └── websocket_test.html # WebSocket接続テスト
+│   │   └── base.html        # ベーステンプレート
 │   ├── storage/             # ファイルストレージ
 │   │   ├── uploads/         # アップロードファイル
 │   │   └── approved/        # 承認済みファイル
@@ -455,19 +352,18 @@ CarryOutApproval/
 
 ### 基本操作
 1. **ログイン**: http://localhost:8000 でテストユーザーでログイン
-2. **申請状況確認**: 3つのカラムで申請状況を視覚的に管理
-   - **承認待ち (Pending)**: 新規申請や承認待ちの申請
-   - **承認済み (Approved)**: 承認された申請
-   - **拒否 (Rejected)**: 却下された申請
-3. **ドラッグ&ドロップ操作**: 申請カードをドラッグして異なるカラムに移動
-4. **申請詳細確認**: カードクリックで詳細情報をモーダル表示
-5. **新規申請作成**: 「新しい申請」ボタンまたはキーボードショートカット
+2. **申請状況確認**: 一覧画面で申請状況を管理
+   - **申請者画面**: 自分の申請一覧と状況確認
+   - **承認者画面**: 承認待ち申請の確認と処理
+3. **申請処理**: 承認・拒否ボタンによる状況変更
+4. **詳細確認**: 申請詳細情報の表示
+5. **新規申請作成**: 申請フォームから新規作成
 
 ### 高度な機能
 - **フィルタリング**: 申請者、承認者、期間による絞り込み
 - **検索機能**: キーワードによる申請検索
 - **ソート機能**: 作成日、更新日、申請者名による並び替え
-- **バッチ操作**: 複数選択による一括操作
+- **Long Polling**: リアルタイム状況更新
 
 ## テスト・動作確認
 
@@ -482,13 +378,13 @@ uv run python manage.py runserver 8000
 # http://localhost:8000/users/login/
 ```
 
-#### 2. WebSocket・リアルタイム通知テスト
+#### 2. 通知システムテスト（Long Polling）
 ```bash
-# ASGIサーバー（WebSocket対応）で起動
-uv run python -m daphne -p 8000 carry_out_approval.asgi:application
+# Djangoサーバー起動（Long Polling対応）
+uv run python manage.py runserver 8000
 
-# WebSocket接続テスト
-# http://localhost:8000/websocket-test/
+# 通知システムテスト用URL
+# http://localhost:8000/
 ```
 
 #### 3. 通知システムテスト
@@ -535,16 +431,14 @@ curl -H "Content-Type: application/json" \
    LDAP_SEARCH_BASE = 'DC=yourdomain,DC=com'
    ```
 
-#### (Archive) WebSocket接続エラー
+#### (Archive) 従来の実装に関するトラブルシューティング
 Long Polling 移行後は通常発生しません。旧実装検証時の参考として残しています。
 
 1. **WebSocket接続失敗** (旧手順)
-   ```bash
-   # legacy (不要)
-   uv run python -m daphne -p 8000 carry_out_approval.asgi:application
-   ```
-2. **Redis接続エラー** (旧 push 経路用)
-   - 現行構成では Redis 非使用
+   - 現在は Long Polling を使用しているため、WebSocket関連のエラーは発生しません
+
+2. **Redis接続エラー** (旧構成)
+   - 現行構成では Redis を使用していません
 
 #### データベース関連
 1. **マイグレーションエラー**
@@ -632,15 +526,15 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # Database
 DATABASE_URL=sqlite:///db.sqlite3
 
-# WebSocket & Redis Settings（本番環境用）
-REDIS_URL=redis://localhost:6379/0
-CHANNEL_LAYERS_BACKEND=channels_redis.core.RedisChannelLayer
+# Long Polling Settings
+LONG_POLLING_ENABLED=True
+LONG_POLLING_TIMEOUT=30
 
 # Mock User API URL (for development)
 MOCK_USER_API_URL=http://localhost:8001/api/users
 ```
 
-**注意**: 開発環境では、Redisがなくてもインメモリチャンネルレイヤーで動作します。
+**注意**: 現在の構成では Redis や WebSocket を使用していません。
 
 ### Django設定のカスタマイズ
 
@@ -655,16 +549,17 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 ## アーキテクチャの特徴
 
 #### HTMXの採用理由
+#### HTMXの採用理由
 - **軽量性**: 重いJavaScriptフレームワークが不要
 - **学習コストの低さ**: HTMLベースのシンプルな記法
 - **サーバー親和性**: Django Templatesとの自然な統合
 - **プログレッシブエンハンスメント**: JavaScript無効環境でも動作
 
-#### Django Channels + WebSocketの採用理由
-- **リアルタイム性**: 申請状況の即座な通知
-- **双方向通信**: サーバーからクライアントへのプッシュ通知
+#### Long Polling の採用理由
+- **シンプルな実装**: WebSocketより実装・運用が容易
+- **十分なリアルタイム性**: 申請状況の更新に必要な応答性を実現
+- **高い互換性**: プロキシ・ファイアウォール環境での安定動作
 - **Django統合**: 既存の認証システムとの自然な連携
-- **スケーラブル**: Redis によるチャンネルレイヤーでの水平拡張対応
 
 ### Long Polling への段階的移行状況 (2025-08)
 
@@ -696,16 +591,16 @@ Django設定は `django/carry_out_approval/settings.py` で管理されていま
 | 依存: `channels`, `channels_redis`, `django_rq`, `redis` | requirements / pyproject から除去 | 上記コード削除後 CI グリーン確認 |
 
 #### 移行後の利点
-- インフラ依存 (Redis, 専用 ASGI サーバ設定) 削減による運用負荷軽減
-- 接続維持コスト (WebSocket keepalive) 不要
-- デバッグ容易: 通常の HTTP トレースのみで解析可能
+- インフラ依存削減による運用負荷軽減（Redis、専用ASGIサーバ設定不要）
+- 接続維持コスト削減（WebSocket keepalive不要）
+- デバッグ容易性：通常のHTTPトレースのみで解析可能
 
-#### 留意点 / 今後の最適化
-- 同時多数ユーザ時の DB ポーリング負荷: 現状 1 秒間隔。バックオフ (指数 / ジッタ) 導入余地
-- レスポンス payload サイズ最適化: 専用軽量シリアライザ導入 (必要フィールド限定) を検討
-- 変更トリガーを pub/sub で持つ (将来再び push が必要になった場合に備えイベント抽象化)
+#### 留意点・今後の最適化
+- 同時多数ユーザ時のDBポーリング負荷：現状1秒間隔、バックオフ（指数・ジッタ）導入余地
+- レスポンスペイロードサイズ最適化：専用軽量シリアライザ導入（必要フィールド限定）検討
+- 変更トリガーのpub/sub化（将来再びpushが必要になった場合に備えたイベント抽象化）
 
-> NOTE: 現在 WebSocket へ接続した場合は即時正常コード (1000) でクローズする fallback 実装。クライアント側で未使用であればユーザ影響なし。
+> NOTE: 現在WebSocketへ接続した場合は即時正常コード（1000）でクローズするfallback実装。クライアント側で未使用であればユーザ影響なし。
 
 #### Bootstrap 5の採用理由
 - **レスポンシブ対応**: モバイルファーストデザイン
@@ -795,21 +690,18 @@ uv venv
 uv pip install -r django\requirements.txt
 ```
 
-### WebSocket・リアルタイム通知のエラー
+### Long Polling 通知システムのエラー
 
-#### (Archive) WebSocket接続エラー
-```
-WebSocket connection failed
-```
-現行: WebSocket を使用しないため無視可。旧手順:
-1. (legacy) Daphne 起動確認
-2. (legacy) Redis 起動確認
-3. (legacy) /websocket-test ページで確認
+#### 通知が更新されない
+1. ブラウザの開発者ツールでネットワークタブを確認
+2. `/api/applications/poll/updates/` エンドポイントへのリクエストを確認
+3. `LONG_POLLING_ENABLED=True` 設定を確認
+4. サーバログでエラーがないか確認
 
 ## 今後の開発方針
 
 ### 近期実装予定
-- **通知システム強化**: ✅ **完了** - WebSocketベースのリアルタイム通知
+- **通知システム強化**: ✅ **完了** - Long Pollingベースのリアルタイム通知
 - **ファイルプレビュー強化**: PDF、画像の直接プレビュー機能
 - **承認フロー拡張**: 複数段階承認、条件分岐承認
 - **メール通知**: 重要な申請状況変更時のメール通知
