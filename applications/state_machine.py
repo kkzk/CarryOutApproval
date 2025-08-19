@@ -51,6 +51,7 @@ def change_status(application: Application, new_status: str, actor, comment: str
     ルール:
     - 同一ステータス指定は no-op (changed=False)
     - 未許可遷移は InvalidTransition 例外
+    - 承認遷移時はすべてのファイルが確認済みである必要がある
     - APPROVED 遷移時に approved_at を設定
     - 承認解除時 (差し戻し) は approved_at を保持 (監査用途)。クリアしたい場合は方針で調整。
     - 監査ログを一元記録
@@ -61,6 +62,12 @@ def change_status(application: Application, new_status: str, actor, comment: str
         return TransitionResult(application, old, new_status, changed=False)
     if new_status not in allowed_targets(old):
         raise InvalidTransition(f"Invalid transition: {old} -> {new_status}")
+
+    # 承認への遷移時、すべてのファイルが確認済みかチェック
+    if new_status == ApprovalStatus.APPROVED:
+        username = getattr(actor, 'username', str(actor))
+        if not application.get_all_files_reviewed_by(username):
+            raise InvalidTransition("承認するには、すべてのファイルを確認する必要があります")
 
     with transaction.atomic():
         application.status = new_status

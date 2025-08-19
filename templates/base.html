@@ -196,7 +196,7 @@
         <button class="sidebar-toggle me-3" id="sidebarToggle" aria-label="サイドバーの表示切替" title="サイドバー切替">
                     <i class="bi bi-list"></i>
                 </button>
-                <a class="navbar-brand" href="{% url 'applications:kanban-board' %}">
+                <a class="navbar-brand" href="{% url 'applications:default-view' %}">
                     <i class="bi bi-clipboard-check"></i> 承認申請管理
                 </a>
                 <button class="navbar-toggler"
@@ -279,13 +279,6 @@
                                     自分の申請一覧
                                 </a>
                             </li>
-                            <li>
-                                <a href="{% url 'applications:my-applications-board' %}"
-                                   {% if request.resolver_match.url_name == 'my-applications-board' %}class="active"{% endif %}>
-                                    <i class="bi bi-kanban"></i>
-                                    申請状況ボード
-                                </a>
-                            </li>
                         </ul>
                     </div>
                     <!-- 承認者セクション -->
@@ -300,10 +293,10 @@
                                 </a>
                             </li>
                             <li>
-                                <a href="{% url 'applications:approval-board' %}"
-                                   {% if request.resolver_match.url_name == 'approval-board' %}class="active"{% endif %}>
-                                    <i class="bi bi-kanban-fill"></i>
-                                    承認管理ボード
+                                <a href="{% url 'applications:approval-list' %}"
+                                   {% if request.resolver_match.url_name == 'approval-list' %}class="active"{% endif %}>
+                                    <i class="bi bi-list-check"></i>
+                                    承認管理一覧
                                 </a>
                             </li>
                             <li>
@@ -325,13 +318,6 @@
                                        {% if request.resolver_match.url_name == 'admin-application-list' %}class="active"{% endif %}>
                                         <i class="bi bi-list-ul"></i>
                                         全申請一覧
-                                    </a>
-                                </li>
-                                <li>
-                                    <a href="{% url 'applications:kanban-board' %}"
-                                       {% if request.resolver_match.url_name == 'kanban-board' %}class="active"{% endif %}>
-                                        <i class="bi bi-columns"></i>
-                                        全体カンバンボード
                                     </a>
                                 </li>
                             </ul>

@@ -102,18 +102,32 @@ class ApplicationCreateForm(forms.ModelForm):
 
 
 class ApplicationFilterForm(forms.Form):
-    """申請検索フォーム"""
-    search = forms.CharField(
+    """申請フィルタフォーム"""
+    status = forms.ChoiceField(
+        choices=[('', 'すべて')] + list(ApprovalStatus.choices),
+        required=False,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'onchange': 'this.form.submit();'
+        }),
+        label="ステータス"
+    )
+    applicant = forms.CharField(
         required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': '申請者名、承認者名、ファイル名、コメントで検索...',
-            'id': 'searchInput',
-            'autocomplete': 'off'
+            'placeholder': '申請者ユーザ名（LDAP）'
         }),
-        label="検索"
+        label="申請者ユーザ名（LDAP）"
     )
-    
+    approver = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': '承認者ユーザ名（LDAP）'
+        }),
+        label="承認者ユーザ名（LDAP）"
+    )
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)

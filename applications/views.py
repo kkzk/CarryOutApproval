@@ -11,7 +11,8 @@ from django.db import transaction  # left for potential future batch ops (state_
 from django.db import models
 from django.template.loader import render_to_string
 from django.utils import timezone  # may be used elsewhere; retained
-from .models import Application, ApprovalStatus
+import os
+from .models import Application, ApprovalStatus, ApplicationFile
 from .serializers import ApplicationSerializer, ApplicationCreateSerializer, ApplicationStatusUpdateSerializer
 from .forms import ApplicationCreateForm, ApplicationFilterForm
 from audit.models import AuditLog
@@ -106,75 +107,34 @@ class PendingApplicationListView(generics.ListAPIView):
 # Django Template Views (新規追加)
 
 @login_required
-@require_POST
-def update_application_status(request):
-    """申請のステータス更新（HTMX用）"""
-    try:
-        application_id = request.POST.get('application_id')
-        new_status = request.POST.get('status')
-        comment = request.POST.get('comment', '')
-
-        application = get_object_or_404(Application, id=application_id)
-        if application.approver != request.user.username and not request.user.is_staff:
-            return JsonResponse({'error': '権限がありません'}, status=403)
-
-        try:
-            state_machine.change_status(application, new_status, request.user, comment=comment)
-        except state_machine.InvalidTransition as e:
-            return JsonResponse({'error': str(e)}, status=400)
-
-        if application.applicant == request.user.username:
-            template_name = 'applications/applicant_application_card.html'
-        elif application.approver == request.user.username or request.user.is_staff:
-            template_name = 'applications/approver_application_card.html'
-        else:
-            template_name = 'applications/applicant_application_card.html'
-
-        card_html = render_to_string(template_name, {'application': application}, request=request)
-        return HttpResponse(card_html)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@login_required
 def application_detail_modal(request, pk):
     """申請詳細のモーダル表示（HTMX用）"""
     application = get_object_or_404(Application, pk=pk)
+    
+    if request.method == 'POST':
+        # 状態更新処理
+        new_status = request.POST.get('status')
+        comment = request.POST.get('comment', '')
+
+        if application.approver != request.user.username and not request.user.is_staff:
+            messages.error(request, '権限がありません')
+            return redirect('applications:default-view')
+
+        try:
+            state_machine.change_status(application, new_status, request.user, comment=comment)
+            if new_status == ApprovalStatus.APPROVED:
+                messages.success(request, f'申請 #{application.id} を承認しました。')
+            elif new_status == ApprovalStatus.REJECTED:
+                messages.success(request, f'申請 #{application.id} を却下しました。')
+            return redirect('applications:default-view')
+        except state_machine.InvalidTransition as e:
+            messages.error(request, str(e))
+            return redirect('applications:default-view')
     
     return render(request, 'applications/application_detail_modal.html', {
         'application': application,
         'approval_choices': ApprovalStatus.choices,
     })
-
-
-@login_required
-def application_card(request, pk):
-    """申請カード取得（リアルタイム更新用）"""
-    application = get_object_or_404(Application, pk=pk)
-    
-    # アクセス権限チェック
-    if not (application.applicant == request.user.username or 
-            application.approver == request.user.username or 
-            request.user.is_staff):
-        return JsonResponse({'error': 'アクセス権限がありません'}, status=403)
-    
-    # カードHTMLを返す
-    # ユーザーの役割に応じて適切なカードテンプレートを選択
-    if application.applicant == request.user.username:
-        # 申請者の場合
-        template_name = 'applications/applicant_application_card.html'
-    elif application.approver == request.user.username or request.user.is_staff:
-        # 承認者の場合
-        template_name = 'applications/approver_application_card.html'
-    else:
-        # 想定外パス: デフォルトは申請者カードを使用
-        template_name = 'applications/applicant_application_card.html'
-        
-    card_html = render_to_string(template_name, {
-        'application': application
-    }, request=request)
-    
-    return HttpResponse(card_html, content_type='text/html')
 
 
 @login_required
@@ -187,18 +147,30 @@ def create_application(request):
                 with transaction.atomic():
                     application = form.save()
                     
+                    # 複数ファイルの保存
+                    files = request.FILES.getlist('attachments')
+                    for file in files:
+                        ApplicationFile.objects.create(
+                            application=application,
+                            file=file,
+                            original_filename=file.name,
+                            file_size=file.size,
+                            content_type=getattr(file, 'content_type', 'application/octet-stream')
+                        )
+                    
                     # 監査ログを記録
+                    file_names = [f.name for f in files] if files else []
                     AuditLog.objects.create(
                         user=request.user,
                         application=application,
                         action="create",
-                        details=f"申請を作成しました。ファイル: {application.original_filename}"
+                        details=f"申請を作成しました。ファイル数: {len(file_names)}, ファイル: {', '.join(file_names)}"
                     )
                     
                     # 通知は post_save シグナルで処理（ここでは重複送信しない）
                     
                     messages.success(request, '申請が正常に作成されました。')
-                    return redirect('applications:kanban-board')
+                    return redirect('applications:default-view')
                     
             except Exception as e:
                 messages.error(request, f'申請の作成中にエラーが発生しました: {str(e)}')
@@ -274,7 +246,7 @@ def admin_application_list(request):
     # 管理者権限チェック
     if not request.user.is_staff:
         messages.error(request, '管理者権限が必要です。')
-        return redirect('applications:kanban-board')
+        return redirect('applications:default-view')
     
     # フィルタフォーム
     filter_form = ApplicationFilterForm(request.GET, user=request.user)
@@ -341,42 +313,74 @@ def my_applications(request):
 
 
 @login_required
-def my_applications_board(request):
-    """自分の申請状況ボード（申請者として）"""
-    applications = (
-        Application.objects
-        .filter(applicant=request.user.username)
-        .order_by('-created_at')
-    )
+def my_applications_list(request):
+    """自分の申請一覧（申請者として）"""
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
     
-    # ステータスごとに分類
-    pending_applications = applications.filter(status=ApprovalStatus.PENDING)
-    approved_applications = applications.filter(status=ApprovalStatus.APPROVED)
-    rejected_applications = applications.filter(status=ApprovalStatus.REJECTED)
+    # 基本クエリ
+    applications = Application.objects.filter(applicant=request.user.username)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
+    
+    # ページネーション
+    from django.core.paginator import Paginator
+    paginator = Paginator(applications, 20)
+    page_number = request.GET.get('page')
+    applications = paginator.get_page(page_number)
     
     context = {
-        'pending_applications': pending_applications,
-        'approved_applications': approved_applications,
-        'rejected_applications': rejected_applications,
-        'approval_choices': ApprovalStatus.choices,
-        'title': '申請状況ボード',
+        'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
+        'title': '自分の申請一覧',
         'is_applicant_view': True,
     }
     
-    return render(request, 'applications/applicant_kanban_board.html', context)
+    return render(request, 'applications/application_list.html', context)
 
 
 @login_required
 def pending_approvals(request):
     """承認待ち申請一覧（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(
-            approver=request.user.username,
-            status=ApprovalStatus.PENDING,
-        )
-        .order_by('-created_at')
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(
+        approver=request.user.username,
+        status=ApprovalStatus.PENDING,
     )
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -386,48 +390,81 @@ def pending_approvals(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '承認待ち申請',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/application_list.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required
-def approval_board(request):
-    """承認管理ボード（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(approver=request.user.username)
-        .order_by('-created_at')
-    )
+def approval_list(request):
+    """承認管理一覧（承認者として）"""
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
     
-    # ステータスごとに分類
-    pending_applications = applications.filter(status=ApprovalStatus.PENDING)
-    approved_applications = applications.filter(status=ApprovalStatus.APPROVED)
-    rejected_applications = applications.filter(status=ApprovalStatus.REJECTED)
+    # 基本クエリ
+    applications = Application.objects.filter(approver=request.user.username)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
+    
+    # ページネーション
+    from django.core.paginator import Paginator
+    paginator = Paginator(applications, 20)
+    page_number = request.GET.get('page')
+    applications = paginator.get_page(page_number)
     
     context = {
-        'pending_applications': pending_applications,
-        'approved_applications': approved_applications,
-        'rejected_applications': rejected_applications,
-        'approval_choices': ApprovalStatus.choices,
-        'title': '承認管理ボード',
+        'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
+        'title': '承認管理一覧',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/approver_kanban_board.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required
 def my_approval_history(request):
     """承認履歴（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(approver=request.user.username)
-        .exclude(status=ApprovalStatus.PENDING)
-        .order_by('-updated_at')
-    )
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(approver=request.user.username).exclude(status=ApprovalStatus.PENDING)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-updated_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -437,25 +474,120 @@ def my_approval_history(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '承認履歴',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/application_list.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required
-def kanban_board(request):
-    """カンバンボード - ユーザーのロールに応じて適切なボードにリダイレクト"""
-    # 承認者として何かの申請を持っている場合は承認ボードを表示
+def default_view(request):
+    """デフォルト表示 - ユーザーのロールに応じて適切な一覧にリダイレクト"""
+    # 承認者として何かの申請を持っている場合は承認一覧を表示
     has_approvals = Application.objects.filter(approver=request.user.username).exists()
-    # 申請者として何かの申請を持っている場合は申請ボードを表示
+    # 申請者として何かの申請を持っている場合は申請一覧を表示
     has_applications = Application.objects.filter(applicant=request.user.username).exists()
     
     # URLパラメータで表示モードを指定できるようにする
     view_mode = request.GET.get('view', None)
     
     if view_mode == 'approval' or (has_approvals and not has_applications):
-        return redirect('applications:approval-board')
+        return redirect('applications:approval-list')
     else:
-        return redirect('applications:my-applications-board')
+        return redirect('applications:my-applications-list')
+
+
+@login_required
+@require_POST
+def mark_file_reviewed(request):
+    """ファイル確認済みマーク"""
+    try:
+        application_id = request.POST.get('application_id')
+        file_id = request.POST.get('file_id')
+        
+        application = get_object_or_404(Application, id=application_id)
+        
+        # 承認者権限チェック
+        if application.approver != request.user.username:
+            return JsonResponse({'error': '権限がありません'}, status=403)
+        
+        # ファイル確認状況を記録
+        from applications.models import FileReviewStatus, ApplicationFile
+        
+        if file_id:
+            app_file = get_object_or_404(ApplicationFile, id=file_id, application=application)
+            review, created = FileReviewStatus.objects.get_or_create(
+                application=application,
+                file=app_file,
+                approver=request.user.username
+            )
+        else:
+            # 旧形式のファイルの場合
+            review, created = FileReviewStatus.objects.get_or_create(
+                application=application,
+                file=None,
+                approver=request.user.username
+            )
+        
+        return JsonResponse({
+            'success': True,
+            'reviewed': True,
+            'all_files_reviewed': application.get_all_files_reviewed_by(request.user.username)
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def open_file(request, application_id, file_id=None):
+    """ファイルを開く（ダウンロード）"""
+    application = get_object_or_404(Application, id=application_id)
+    
+    # アクセス権限チェック
+    if not (application.applicant == request.user.username or 
+            application.approver == request.user.username or 
+            request.user.is_staff):
+        messages.error(request, 'アクセス権限がありません')
+        return redirect('applications:my-applications-list')
+    
+    try:
+        if file_id:
+            # 新形式のファイル
+            from applications.models import ApplicationFile
+            app_file = get_object_or_404(ApplicationFile, id=file_id, application=application)
+            file_path = app_file.file.path
+            filename = app_file.original_filename
+            content_type = app_file.content_type
+        else:
+            # 旧形式のファイル
+            if not application.file:
+                messages.error(request, 'ファイルが見つかりません')
+                return redirect('applications:my-applications-list')
+            
+            file_path = application.file.path
+            filename = application.original_filename
+            content_type = application.content_type
+        
+        # ファイルが存在するかチェック
+        if not os.path.exists(file_path):
+            messages.error(request, 'ファイルが見つかりません')
+            return redirect('applications:my-applications-list')
+        
+        # ファイルレスポンスを返す
+        from django.http import FileResponse
+        response = FileResponse(
+            open(file_path, 'rb'),
+            content_type=content_type,
+            as_attachment=True,
+            filename=filename
+        )
+        
+        return response
+        
+    except Exception as e:
+        messages.error(request, f'ファイルの読み込み中にエラーが発生しました: {str(e)}')
+        return redirect('applications:my-applications-list')

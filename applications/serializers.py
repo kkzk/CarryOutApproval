@@ -1,8 +1,18 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Application, ApprovalStatus
+from .models import Application, ApprovalStatus, ApplicationFile
 
 User = get_user_model()
+
+
+class ApplicationFileSerializer(serializers.ModelSerializer):
+    """申請ファイルシリアライザー"""
+    class Meta:
+        model = ApplicationFile
+        fields = [
+            'id', 'file', 'original_filename', 'file_size', 
+            'content_type', 'uploaded_at'
+        ]
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -28,13 +38,17 @@ class ApplicationSerializer(serializers.ModelSerializer):
     applicant = serializers.SerializerMethodField()
     approver = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    files = ApplicationFileSerializer(many=True, read_only=True)
+    file_count = serializers.ReadOnlyField()
+    total_file_size = serializers.ReadOnlyField()
 
     class Meta:
         model = Application
         fields = [
             'id', 'applicant', 'approver', 'file', 'original_filename',
             'file_size', 'content_type', 'comment', 'approval_comment',
-            'status', 'status_display', 'created_at', 'updated_at', 'approved_at'
+            'status', 'status_display', 'created_at', 'updated_at', 'approved_at',
+            'files', 'file_count', 'total_file_size'
         ]
         read_only_fields = ('created_at', 'updated_at', 'approved_at')
 

@@ -21,19 +21,13 @@ def get_upload_path(instance, filename):
     return os.path.join('uploads', unique_filename)
 
 
-class Application(models.Model):
-    """申請モデル"""
-    id = models.AutoField(
-        primary_key=True,
-        verbose_name="ID"
-    )
-    applicant = models.CharField(
-        max_length=150,
-        verbose_name="申請者ユーザ名（LDAP）"
-    )
-    approver = models.CharField(
-        max_length=150,
-        verbose_name="承認者ユーザ名（LDAP）"
+class ApplicationFile(models.Model):
+    """申請ファイルモデル"""
+    application = models.ForeignKey(
+        'Application',
+        on_delete=models.CASCADE,
+        related_name='files',
+        verbose_name="申請"
     )
     file = models.FileField(
         upload_to=get_upload_path,
@@ -49,6 +43,56 @@ class Application(models.Model):
     content_type = models.CharField(
         max_length=100,
         verbose_name="コンテンツタイプ"
+    )
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="アップロード日時"
+    )
+    
+    class Meta:
+        verbose_name = "申請ファイル"
+        verbose_name_plural = "申請ファイル"
+        ordering = ['uploaded_at']
+    
+    def __str__(self):
+        return f"{self.original_filename} ({self.application.id})"
+
+
+class Application(models.Model):
+    """申請モデル"""
+    id = models.AutoField(
+        primary_key=True,
+        verbose_name="ID"
+    )
+    applicant = models.CharField(
+        max_length=150,
+        verbose_name="申請者ユーザ名（LDAP）"
+    )
+    approver = models.CharField(
+        max_length=150,
+        verbose_name="承認者ユーザ名（LDAP）"
+    )
+    # 下位互換性のため一時的に残すが、今後は files リレーションを使用
+    file = models.FileField(
+        upload_to=get_upload_path,
+        verbose_name="ファイル",
+        blank=True,
+        null=True
+    )
+    original_filename = models.CharField(
+        max_length=255,
+        verbose_name="元ファイル名",
+        blank=True
+    )
+    file_size = models.IntegerField(
+        verbose_name="ファイルサイズ",
+        blank=True,
+        null=True
+    )
+    content_type = models.CharField(
+        max_length=100,
+        verbose_name="コンテンツタイプ",
+        blank=True
     )
     comment = models.TextField(
         blank=True,
@@ -85,6 +129,93 @@ class Application(models.Model):
     
     def __str__(self):
         return f"{self.applicant}の申請 ({self.id})"
+    
+    @property
+    def primary_file(self):
+        """メインファイルを取得（下位互換性のため）"""
+        if self.file:
+            return self.file
+        files = self.files.first()
+        return files.file if files else None
+    
+    @property
+    def primary_filename(self):
+        """メインファイル名を取得（下位互換性のため）"""
+        if self.original_filename:
+            return self.original_filename
+        files = self.files.first()
+        return files.original_filename if files else None
+    
+    @property
+    def total_file_size(self):
+        """全ファイルの合計サイズを取得"""
+        if self.file_size:
+            return self.file_size
+        return sum(f.file_size for f in self.files.all())
+    
+    @property
+    def file_count(self):
+        """ファイル数を取得"""
+        if self.file:
+            return 1
+        return self.files.count()
+    
+    def get_all_files_reviewed_by(self, approver_username):
+        """指定した承認者がすべてのファイルを確認済みかチェック"""
+        all_files = self.files.all()
+        if not all_files.exists():
+            # 旧形式のファイルのみの場合
+            if self.file:
+                return self.file_reviews.filter(
+                    approver=approver_username,
+                    file__isnull=True
+                ).exists()
+            return False
+        
+        reviewed_files = self.file_reviews.filter(
+            approver=approver_username,
+            file__in=all_files
+        ).count()
+        
+        return reviewed_files == all_files.count()
+    
+    def get_reviewed_files_by(self, approver_username):
+        """指定した承認者が確認済みのファイル一覧を取得"""
+        return self.file_reviews.filter(
+            approver=approver_username
+        ).values_list('file__original_filename', flat=True)
+
+
+class FileReviewStatus(models.Model):
+    """ファイル確認状況モデル"""
+    application = models.ForeignKey(
+        'Application',
+        on_delete=models.CASCADE,
+        related_name='file_reviews',
+        verbose_name="申請"
+    )
+    file = models.ForeignKey(
+        'ApplicationFile',
+        on_delete=models.CASCADE,
+        verbose_name="ファイル"
+    )
+    approver = models.CharField(
+        max_length=150,
+        verbose_name="承認者ユーザ名"
+    )
+    reviewed_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="確認日時"
+    )
+    
+    class Meta:
+        verbose_name = "ファイル確認状況"
+        verbose_name_plural = "ファイル確認状況"
+        unique_together = ['application', 'file', 'approver']
+        ordering = ['-reviewed_at']
+    
+    def __str__(self):
+        return f"{self.approver}が{self.file.original_filename}を確認"
 
 
 """以前は post_save シグナルで通知処理を行っていたが、
