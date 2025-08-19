@@ -315,11 +315,27 @@ def my_applications(request):
 @login_required
 def my_applications_list(request):
     """自分の申請一覧（申請者として）"""
-    applications = (
-        Application.objects
-        .filter(applicant=request.user.username)
-        .order_by('-created_at')
-    )
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(applicant=request.user.username)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -329,6 +345,8 @@ def my_applications_list(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '自分の申請一覧',
         'is_applicant_view': True,
     }
@@ -339,14 +357,30 @@ def my_applications_list(request):
 @login_required
 def pending_approvals(request):
     """承認待ち申請一覧（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(
-            approver=request.user.username,
-            status=ApprovalStatus.PENDING,
-        )
-        .order_by('-created_at')
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(
+        approver=request.user.username,
+        status=ApprovalStatus.PENDING,
     )
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -356,21 +390,39 @@ def pending_approvals(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '承認待ち申請',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/application_list.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required
 def approval_list(request):
     """承認管理一覧（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(approver=request.user.username)
-        .order_by('-created_at')
-    )
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(approver=request.user.username)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-created_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -380,22 +432,39 @@ def approval_list(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '承認管理一覧',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/application_list.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required
 def my_approval_history(request):
     """承認履歴（承認者として）"""
-    applications = (
-        Application.objects
-        .filter(approver=request.user.username)
-        .exclude(status=ApprovalStatus.PENDING)
-        .order_by('-updated_at')
-    )
+    from django.db.models import Q
+    from .forms import ApplicationFilterForm
+    
+    # 基本クエリ
+    applications = Application.objects.filter(approver=request.user.username).exclude(status=ApprovalStatus.PENDING)
+    
+    # 検索フォームの処理
+    filter_form = ApplicationFilterForm(request.GET)
+    search_query = request.GET.get('search', '').strip()
+    
+    if search_query:
+        # 検索条件を適用
+        applications = applications.filter(
+            Q(applicant__icontains=search_query) |
+            Q(approver__icontains=search_query) |
+            Q(comment__icontains=search_query) |
+            Q(files__original_filename__icontains=search_query)
+        ).distinct()
+    
+    # 並び順
+    applications = applications.order_by('-updated_at')
     
     # ページネーション
     from django.core.paginator import Paginator
@@ -405,11 +474,13 @@ def my_approval_history(request):
     
     context = {
         'applications': applications,
+        'filter_form': filter_form,
+        'search_query': search_query,
         'title': '承認履歴',
         'is_approval_view': True,
     }
     
-    return render(request, 'applications/application_list.html', context)
+    return render(request, 'applications/approval_list.html', context)
 
 
 @login_required

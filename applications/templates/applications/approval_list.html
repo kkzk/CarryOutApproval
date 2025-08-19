@@ -13,10 +13,14 @@
                 <!-- ヘッダー -->
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h2>
-                        <i class="fas fa-list me-2"></i>{{ title }}
-                        <small class="text-muted fs-6">（申請者として）</small>
+                        <i class="fas fa-list-check me-2"></i>{{ title }}
+                        <small class="text-muted fs-6">（承認者として）</small>
                     </h2>
                     <div>
+                        <a href="{% url 'applications:pending-approvals' %}" 
+                           class="btn btn-warning">
+                            <i class="fas fa-clock me-2"></i>承認待ち
+                        </a>
                         <a href="{% url 'applications:create-application' %}" 
                            class="btn btn-success">
                             <i class="fas fa-plus me-2"></i>新しい申請
@@ -34,7 +38,7 @@
                                        id="searchInput" 
                                        name="search" 
                                        value="{{ search_query|default:'' }}" 
-                                       placeholder="申請者名、承認者名、ファイル名、コメントで検索..."
+                                       placeholder="申請者名、ファイル名、コメントで検索..."
                                        autocomplete="off">
                             </div>
                             <div class="col-md-2 d-flex align-items-end">
@@ -70,8 +74,8 @@
                                         <tr>
                                             <th>ID</th>
                                             <th>申請者</th>
-                                            <th>承認者</th>
                                             <th>ファイル名</th>
+                                            <th>確認状況</th>
                                             <th>ステータス</th>
                                             <th>申請日</th>
                                             <th>承認日</th>
@@ -88,12 +92,6 @@
                                                     <div class="d-flex align-items-center">
                                                         <i class="fas fa-user me-2 text-muted"></i>
                                                         {{ application.applicant }}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div class="d-flex align-items-center">
-                                                        <i class="fas fa-user-check me-2 text-muted"></i>
-                                                        {{ application.approver }}
                                                     </div>
                                                 </td>
                                                 <td>
@@ -124,6 +122,47 @@
                                                             {{ application.file_size|filesizeformat }}
                                                         {% endif %}
                                                     </small>
+                                                </td>
+                                                <td>
+                                                    {% if application.files.exists %}
+                                                        <div class="file-review-status">
+                                                            {% for file in application.files.all %}
+                                                                <div class="mb-1">
+                                                                    <small class="d-block">{{ file.original_filename|truncatechars:20 }}</small>
+                                                                    {% if file|is_file_reviewed_by:request.user.username %}
+                                                                        <span class="badge bg-success">
+                                                                            <i class="fas fa-check"></i> 確認済み
+                                                                        </span>
+                                                                    {% else %}
+                                                                        <span class="badge bg-warning">
+                                                                            <i class="fas fa-clock"></i> 未確認
+                                                                        </span>
+                                                                    {% endif %}
+                                                                </div>
+                                                            {% endfor %}
+                                                            {% if application|all_files_reviewed_by:request.user.username %}
+                                                                <small class="text-success">
+                                                                    <i class="fas fa-check-circle"></i> 全ファイル確認済み
+                                                                </small>
+                                                            {% else %}
+                                                                <small class="text-warning">
+                                                                    <i class="fas fa-exclamation-circle"></i> 確認が必要
+                                                                </small>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% elif application.file %}
+                                                        {% if application|is_legacy_file_reviewed_by:request.user.username %}
+                                                            <span class="badge bg-success">
+                                                                <i class="fas fa-check"></i> 確認済み
+                                                            </span>
+                                                        {% else %}
+                                                            <span class="badge bg-warning">
+                                                                <i class="fas fa-clock"></i> 未確認
+                                                            </span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="text-muted">ファイルなし</span>
+                                                    {% endif %}
                                                 </td>
                                                 <td>
                                                     {% if application.status == 'pending' %}
@@ -160,80 +199,22 @@
                                                             <i class="fas fa-eye"></i>
                                                         </button>
                                                         {% if application.files.exists or application.file %}
-                                                            {% if is_approval_view %}
-                                                                <!-- 承認者向け：ファイル確認機能 -->
-                                                                {% if application.files.exists and application.file_count == 1 %}
-                                                                    <button class="btn btn-outline-success btn-sm"
-                                                                            onclick="openAndMarkFile({{ application.id }}, {{ application.files.first.id }}, '{{ application.files.first.original_filename }}')"
-                                                                            title="ファイルを開いて確認">
-                                                                        <i class="fas fa-external-link-alt"></i>
-                                                                    </button>
-                                                                {% elif application.files.exists and application.file_count > 1 %}
-                                                                    <div class="btn-group">
-                                                                        <button type="button" 
-                                                                                class="btn btn-outline-success btn-sm dropdown-toggle" 
-                                                                                data-bs-toggle="dropdown" 
-                                                                                aria-expanded="false"
-                                                                                title="ファイルを開いて確認">
-                                                                            <i class="fas fa-external-link-alt"></i>
-                                                                        </button>
-                                                                        <ul class="dropdown-menu">
-                                                                            {% for file in application.files.all %}
-                                                                                <li>
-                                                                                    <a class="dropdown-item" 
-                                                                                       href="#"
-                                                                                       onclick="openAndMarkFile({{ application.id }}, {{ file.id }}, '{{ file.original_filename }}')">
-                                                                                        <i class="fas fa-external-link-alt me-2"></i>{{ file.original_filename }}
-                                                                                    </a>
-                                                                                </li>
-                                                                            {% endfor %}
-                                                                        </ul>
-                                                                    </div>
-                                                                {% elif application.file %}
-                                                                    <button class="btn btn-outline-success btn-sm"
-                                                                            onclick="openAndMarkFile({{ application.id }}, null, '{{ application.original_filename }}')"
-                                                                            title="ファイルを開いて確認">
-                                                                        <i class="fas fa-external-link-alt"></i>
-                                                                    </button>
-                                                                {% endif %}
-                                                            {% else %}
-                                                                <!-- 申請者向け：通常のダウンロード -->
-                                                                {% if application.files.exists and application.file_count == 1 %}
-                                                                    <a href="{{ application.files.first.file.url }}"
+                                                            {% if application.files.exists %}
+                                                                {% for file in application.files.all %}
+                                                                    <a href="{% url 'applications:open-file' application.id file.id %}"
                                                                        class="btn btn-outline-secondary btn-sm"
                                                                        target="_blank"
-                                                                       title="ファイルをダウンロード">
-                                                                        <i class="fas fa-download"></i>
+                                                                       title="ファイルを開く">
+                                                                        <i class="fas fa-external-link-alt"></i>
                                                                     </a>
-                                                                {% elif application.files.exists and application.file_count > 1 %}
-                                                                    <div class="btn-group">
-                                                                        <button type="button" 
-                                                                                class="btn btn-outline-secondary btn-sm dropdown-toggle" 
-                                                                                data-bs-toggle="dropdown" 
-                                                                                aria-expanded="false"
-                                                                                title="ファイルをダウンロード">
-                                                                            <i class="fas fa-download"></i>
-                                                                        </button>
-                                                                        <ul class="dropdown-menu">
-                                                                            {% for file in application.files.all %}
-                                                                                <li>
-                                                                                    <a class="dropdown-item" 
-                                                                                       href="{{ file.file.url }}" 
-                                                                                       target="_blank">
-                                                                                        <i class="fas fa-file me-2"></i>{{ file.original_filename }}
-                                                                                    </a>
-                                                                                </li>
-                                                                            {% endfor %}
-                                                                        </ul>
-                                                                    </div>
-                                                                {% elif application.file %}
-                                                                    <a href="{{ application.file.url }}"
-                                                                       class="btn btn-outline-secondary btn-sm"
-                                                                       target="_blank"
-                                                                       title="ファイルをダウンロード">
-                                                                        <i class="fas fa-download"></i>
-                                                                    </a>
-                                                                {% endif %}
+                                                                {% endfor %}
+                                                            {% elif application.file %}
+                                                                <a href="{% url 'applications:open-file' application.id %}"
+                                                                   class="btn btn-outline-secondary btn-sm"
+                                                                   target="_blank"
+                                                                   title="ファイルを開く">
+                                                                    <i class="fas fa-external-link-alt"></i>
+                                                                </a>
                                                             {% endif %}
                                                         {% endif %}
                                                     </div>
@@ -250,13 +231,13 @@
                                         {% if applications.has_previous %}
                                             <li class="page-item">
                                                 <a class="page-link"
-                                                   href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                   href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">
                                                     <i class="fas fa-angle-double-left"></i>
                                                 </a>
                                             </li>
                                             <li class="page-item">
                                                 <a class="page-link"
-                                                   href="?page={{ applications.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                   href="?page={{ applications.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
                                                     <i class="fas fa-angle-left"></i>
                                                 </a>
                                             </li>
@@ -269,20 +250,22 @@
                                             {% elif num > applications.number|add:'-3' and num < applications.number|add:'3' %}
                                                 <li class="page-item">
                                                     <a class="page-link"
-                                                       href="?page={{ num }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">{{ num }}</a>
+                                                       href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                                        {{ num }}
+                                                    </a>
                                                 </li>
                                             {% endif %}
                                         {% endfor %}
                                         {% if applications.has_next %}
                                             <li class="page-item">
                                                 <a class="page-link"
-                                                   href="?page={{ applications.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                   href="?page={{ applications.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
                                                     <i class="fas fa-angle-right"></i>
                                                 </a>
                                             </li>
                                             <li class="page-item">
                                                 <a class="page-link"
-                                                   href="?page={{ applications.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.applicant %}&applicant={{ request.GET.applicant }}{% endif %}{% if request.GET.approver %}&approver={{ request.GET.approver }}{% endif %}">
+                                                   href="?page={{ applications.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">
                                                     <i class="fas fa-angle-double-right"></i>
                                                 </a>
                                             </li>
@@ -302,10 +285,7 @@
                                 {% else %}
                                     <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
                                     <h5 class="text-muted">申請がありません</h5>
-                                    <p class="text-muted">まだ申請を作成していません。</p>
-                                    <a href="{% url 'applications:create-application' %}" class="btn btn-primary">
-                                        <i class="fas fa-plus me-2"></i>新しい申請を作成
-                                    </a>
+                                    <p class="text-muted">承認対象の申請データがありません。</p>
                                 {% endif %}
                             </div>
                         {% endif %}
@@ -314,141 +294,120 @@
             </div>
         </div>
     </div>
-    <!-- 申請詳細モーダル -->
-    <div class="modal fade"
-         id="detailModal"
-         tabindex="-1"
-         aria-labelledby="detailModalLabel"
-         aria-hidden="true">
+    <!-- 詳細表示モーダル -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
-            <div class="modal-content" id="modalContent">
-                <!-- HTMX で動的にロードされる内容 -->
-                <div class="text-center p-4">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">読み込み中...</span>
-                    </div>
+            <div class="modal-content">
+                <div id="modal-body">
+                    <!-- HTMXで動的に読み込み -->
                 </div>
             </div>
         </div>
     </div>
     <script>
-function loadApplicationDetail(applicationId) {
-    // 申請詳細をロード
-    const modalContent = document.getElementById('modalContent');
-    
-    // CSRFトークンを取得
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
-                     document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    
-    // 正しいURLを構築
-    const url = `{% url "applications:application-detail-modal" pk=0 %}`.replace('0', applicationId);
-    
-    fetch(url, {
-        method: 'GET',
-        headers: {
-            'X-CSRFToken': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        
+        function loadApplicationDetail(applicationId) {
+            const modalBody = document.getElementById('modal-body');
+            
+            // ローディング表示
+            modalBody.innerHTML = `
+                <div class="modal-header">
+                    <h5 class="modal-title">申請詳細</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">読み込み中...</span>
+                    </div>
+                </div>
+            `;
+            
+            // 詳細データを取得
+            fetch(`/applications/${applicationId}/detail/`)
+                .then(response => response.text())
+                .then(html => {
+                    modalBody.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    modalBody.innerHTML = `
+                        <div class="modal-header">
+                            <h5 class="modal-title">エラー</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-danger">
+                                申請詳細の読み込みに失敗しました。
+                            </div>
+                        </div>
+                    `;
+                });
         }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+        function markFileReviewed(applicationId, fileId) {
+            const formData = new FormData();
+            formData.append('application_id', applicationId);
+            if (fileId) {
+                formData.append('file_id', fileId);
+            }
+
+            fetch('/applications/mark-file-reviewed/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // ページをリロードして確認状況を更新
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    console.error('ファイル確認のマークに失敗:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
         }
-        return response.text();
-    })
-    .then(html => {
-        modalContent.innerHTML = html;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        modalContent.innerHTML = `
-            <div class="alert alert-danger m-3">
-                <h6>申請詳細の読み込みに失敗しました</h6>
-                <p>エラー: ${error.message}</p>
-            </div>
-        `;
-    });
-}
 
-function openAndMarkFile(applicationId, fileId, filename) {
-    // ファイルを開く
-    let url;
-    if (fileId) {
-        url = `{% url "applications:open-file" application_id=0 file_id=1 %}`.replace('0', applicationId).replace('1', fileId);
-    } else {
-        url = `{% url "applications:open-file-legacy" application_id=0 %}`.replace('0', applicationId);
-    }
-    
-    // ファイルをダウンロード
-    window.open(url, '_blank');
-    
-    // ファイル確認済みとしてマーク
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
-                     document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    
-    const formData = new FormData();
-    formData.append('application_id', applicationId);
-    if (fileId) {
-        formData.append('file_id', fileId);
-    }
-    formData.append('csrfmiddlewaretoken', csrfToken);
-    
-    fetch('{% url "applications:mark-file-reviewed" %}', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRFToken': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // ページをリロードして確認状況を更新
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            console.error('ファイル確認のマークに失敗:', data.error);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
-}
+        // 検索機能の実装
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('searchInput');
+            const clearBtn = document.getElementById('clearBtn');
+            const clearSearchBtn = document.getElementById('clearSearchBtn');
 
-// 検索機能の実装
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('searchInput');
-    const clearBtn = document.getElementById('clearBtn');
-    const clearSearchBtn = document.getElementById('clearSearchBtn');
+            // クリアボタンの動作
+            function clearSearch() {
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                // URLから検索パラメータを削除してページをリロード
+                window.location.href = window.location.pathname;
+            }
 
-    // クリアボタンの動作
-    function clearSearch() {
-        if (searchInput) {
-            searchInput.value = '';
-        }
-        // URLから検索パラメータを削除してページをリロード
-        window.location.href = window.location.pathname;
-    }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', clearSearch);
+            }
 
-    if (clearBtn) {
-        clearBtn.addEventListener('click', clearSearch);
-    }
+            if (clearSearchBtn) {
+                clearSearchBtn.addEventListener('click', clearSearch);
+            }
 
-    if (clearSearchBtn) {
-        clearSearchBtn.addEventListener('click', clearSearch);
-    }
-
-    // Enterキーでの検索フォーム送信
-    if (searchInput) {
-        searchInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('searchForm').submit();
+            // Enterキーでの検索フォーム送信
+            if (searchInput) {
+                searchInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        document.getElementById('searchForm').submit();
+                    }
+                });
             }
         });
-    }
-});
     </script>
 {% endblock content %}
